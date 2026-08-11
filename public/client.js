@@ -608,27 +608,87 @@ function drawPlayerGlyph(o, sx, feetY, fullH, dist) {
 // A wireframe box (front face + offset back face + connecting edges) reads
 // as an actual 3D chest; a single rect plus a seam line just looked like two
 // flat rectangles stacked on top of each other.
+// Amber = chest material (matches the caches' colour everywhere else in the
+// HUD); blue = the magic in it (matches the existing spell/blue convention
+// used for spell drops), so the glow reads as "enchanted" rather than just
+// "a different colour for no reason."
 function drawCacheGlyph(sx, feetY, fullH) {
-  const rh = clamp(fullH * 0.26, 7, canvas.height * 0.45) * (1 + Math.sin(performance.now() / 400) * 0.06);
+  const t = performance.now();
+  const pulse = 1 + Math.sin(t / 400) * 0.06;
+  const glow = 0.5 + Math.sin(t / 260) * 0.5;
+
+  const rh = clamp(fullH * 0.26, 7, canvas.height * 0.45) * pulse;
   const rw = rh * 1.25;
   const depth = rw * 0.34;
   const bx = depth * 0.75, by = -depth * 0.55; // back face recedes up-and-right
 
   const left = sx - rw / 2, right = sx + rw / 2;
   const top = feetY - rh, bottom = feetY;
+  const gemY = top + rh * 0.5;
+
+  // soft magical aura behind the whole chest
+  const auraR = rw * (1.5 + glow * 0.35);
+  const aura = ctx.createRadialGradient(sx, gemY, 0, sx, gemY, auraR);
+  aura.addColorStop(0, `rgba(77,195,255,${(0.16 + glow * 0.12).toFixed(2)})`);
+  aura.addColorStop(1, 'rgba(77,195,255,0)');
+  ctx.fillStyle = aura;
+  ctx.fillRect(sx - auraR, gemY - auraR, auraR * 2, auraR * 2);
 
   ctx.strokeStyle = '#ffcf4d';
   ctx.lineWidth = clamp(rh * 0.07, 1, 3);
-
   ctx.strokeRect(left, top, rw, rh); // front face
   ctx.strokeRect(left + bx, top + by, rw, rh); // back face
-
   ctx.beginPath();
   ctx.moveTo(left, top); ctx.lineTo(left + bx, top + by);
   ctx.moveTo(right, top); ctx.lineTo(right + bx, top + by);
   ctx.moveTo(left, bottom); ctx.lineTo(left + bx, bottom + by);
   ctx.moveTo(right, bottom); ctx.lineTo(right + bx, bottom + by);
   ctx.stroke();
+
+  // iron banding straps across the front face
+  ctx.lineWidth = clamp(rh * 0.045, 1, 2);
+  ctx.strokeStyle = 'rgba(255,207,77,0.65)';
+  for (const f of [0.32, 0.68]) {
+    ctx.beginPath();
+    ctx.moveTo(left, top + rh * f);
+    ctx.lineTo(right, top + rh * f);
+    ctx.stroke();
+  }
+
+  // glowing gem/lock centrepiece
+  const gemR = rh * 0.14 * (0.85 + glow * 0.3);
+  const gemGlow = ctx.createRadialGradient(sx, gemY, 0, sx, gemY, gemR * 2.2);
+  gemGlow.addColorStop(0, `rgba(140,220,255,${(0.7 + glow * 0.3).toFixed(2)})`);
+  gemGlow.addColorStop(1, 'rgba(140,220,255,0)');
+  ctx.fillStyle = gemGlow;
+  ctx.beginPath();
+  ctx.arc(sx, gemY, gemR * 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#c9ecff';
+  ctx.lineWidth = clamp(gemR * 0.3, 1, 2);
+  ctx.beginPath();
+  ctx.moveTo(sx, gemY - gemR); ctx.lineTo(sx + gemR, gemY);
+  ctx.lineTo(sx, gemY + gemR); ctx.lineTo(sx - gemR, gemY);
+  ctx.closePath();
+  ctx.stroke();
+
+  // twinkling sparkles at fixed offsets, each on its own phase
+  const sparkles = [
+    { ox: -rw * 0.55, oy: -rh * 0.15, phase: 0 },
+    { ox: rw * 0.6, oy: -rh * 0.35, phase: 2.1 },
+    { ox: rw * 0.05, oy: -rh * 0.75, phase: 4.2 },
+  ];
+  for (const s of sparkles) {
+    const tw = 0.5 + 0.5 * Math.sin(t / 260 + s.phase);
+    if (tw < 0.35) continue;
+    const px = sx + s.ox, py = top + s.oy, r = rh * 0.09 * tw;
+    ctx.strokeStyle = `rgba(190,230,255,${tw.toFixed(2)})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(px - r, py); ctx.lineTo(px + r, py);
+    ctx.moveTo(px, py - r); ctx.lineTo(px, py + r);
+    ctx.stroke();
+  }
 }
 
 function drawDropGlyph(d, sx, feetY, fullH) {

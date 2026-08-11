@@ -44,6 +44,11 @@ npm start
   player's allowed exploration state. For the v01 proof of concept,
   `CONFIG.revealAll` is intentionally `true`; this is test scaffolding, not the
   final visibility policy.
+- Inventory is a fixed eight-slot loadout: slots 1–4 map to the left hand and
+  5–8 to the right. Z/M (and matching mouse buttons) activate
+  those hands. Number keys toggle equipment; drag-and-drop swaps slot sides.
+- A shield hand dodges. With two weapons, the right hand is primary/full
+  damage and the left is off-hand/half damage; a lone left weapon is full.
 
 ### DungeonMaster UI
 
@@ -97,14 +102,22 @@ Combat is server-authoritative in `src/server/game.js`:
 - Weapon swaps deliberately root the player for `weaponSwapMs`; spell changes
   are immediate.
 
-Resolve these known correctness issues while working on fight dynamics:
+The first fight-mechanics slice resolved two earlier correctness defects:
+events are cleared only after snapshot fan-out, and full-inventory pickups no
+longer consume caches or floor drops.
 
-1. `Game.tick()` clears `this.events` before the server sends snapshots.
-   Action/combat/pickup/death events emitted between ticks can be discarded,
-   so move event clearing until after snapshot fan-out or use per-client queues.
-2. `doPickup()` marks a cache looted or removes a floor drop before
-   `giveItem()` checks inventory capacity. A full inventory therefore destroys
-   non-boon items. Validate capacity before mutating the world entity.
+Current weapon/hand foundation:
+
+- Fixed nullable inventory slots preserve left/right loadout position.
+- Equipment number keys toggle the item assigned to that slot's hand.
+- Server-authoritative slot swapping supports drag-to-rearrange loadouts.
+- Weapon attacks create an authoritative windup/release state; damage resolves
+  after the windup, not on keydown. Axe cleave can hit multiple targets and
+  maul applies knockback.
+- Shields are cache items (at least one is guaranteed per level). Activating a
+  shield hand performs a directional dash with brief invulnerability.
+- First-person weapons animate by attack style, and opponent weapons turn
+  amber during their telegraphed windup.
 
 Preserve these gameplay decisions unless the user changes them:
 
@@ -114,6 +127,17 @@ Preserve these gameplay decisions unless the user changes them:
 - Alive opponents have no player-view name/health overlay; killed opponents
   briefly reveal their name.
 - The DM continues to see complete combat state.
+
+Spell/projectile foundation:
+
+- Space starts an authoritative cast windup rendered as sparkles converging on
+  the caster. Mend resolves after windup; offensive spells launch projectiles.
+- Projectiles move in server tick substeps, lose damage energy with distance,
+  and collide with walls, unopened caches, and players. Frost slows only on a
+  non-dodged hit; Ember applies radial damage at a player impact.
+- Throwing Knives are hand equipment with a throw windup. They use the same
+  projectile engine and land as the original inventory item after impact or
+  range expiry, allowing any player to pick them up and reuse them.
 
 ## Deferred scope
 

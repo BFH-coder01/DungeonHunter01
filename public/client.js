@@ -12,6 +12,7 @@ let self = null;
 let others = new Map();
 let caches = new Map();
 let drops = new Map();
+let projectiles = new Map();
 
 const audio = createAmbientAudio();
 const prevOthersPos = new Map(); // player id -> {x,y}, used to detect movement for footstep audio
@@ -84,6 +85,7 @@ function onState(msg) {
   others = new Map(msg.others.map((o) => [o.id, o]));
   caches = new Map(msg.caches.map((c) => [c.id, c]));
   drops = new Map(msg.drops.map((d) => [d.uid, d]));
+  projectiles = new Map((msg.projectiles || []).map((p) => [p.id, p]));
 
   updateOtherFootsteps(msg.others);
 
@@ -126,8 +128,8 @@ canvas.addEventListener('mousedown', (e) => {
     canvas.requestPointerLock();
     return;
   }
-  if (e.button === 0) sendAction(ACTION.ATTACK);
-  if (e.button === 2) sendAction(ACTION.CAST);
+  if (e.button === 0) sendAction(ACTION.ATTACK, { hand: 'left' });
+  if (e.button === 2) sendAction(ACTION.ATTACK, { hand: 'right' });
 });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -169,6 +171,10 @@ const keys = new Set();
 window.addEventListener('keydown', (e) => {
   if (document.activeElement === nameInput) return;
   keys.add(e.key.toLowerCase());
+  if (!e.repeat && (e.code === 'KeyZ' || e.code === 'KeyM')) {
+    sendAction(ACTION.ATTACK, { hand: e.code === 'KeyZ' ? 'left' : 'right' });
+    e.preventDefault();
+  }
   if (e.key === 'e' || e.key === 'E' || e.key === 'o' || e.key === 'O') sendAction(ACTION.PICKUP);
   if (e.key === ' ') { sendAction(ACTION.CAST); e.preventDefault(); }
   const n = Number(e.key);
@@ -222,6 +228,7 @@ const respawnIn = document.getElementById('respawnIn');
 const swapBanner = document.getElementById('swapBanner');
 const inventoryEl = document.getElementById('inventory');
 const logEl = document.getElementById('log');
+let inventorySignature = '';
 
 function updateHud() {
   if (!self) return;
@@ -242,12 +249,23 @@ function updateHud() {
 }
 
 function renderInventory() {
+  const signature = JSON.stringify({
+    items: self.inventory.map((item) => item?.uid || null),
+    left: self.leftHandUid,
+    right: self.rightHandUid,
+    spell: self.equippedSpellUid,
+  });
+  if (signature === inventorySignature) return;
+  inventorySignature = signature;
   inventoryEl.innerHTML = '';
   const size = 8;
   for (let i = 0; i < size; i++) {
     const item = self.inventory[i];
     const slot = document.createElement('div');
     slot.className = 'slot';
+    slot.dataset.index = String(i);
+    if (i === 4) slot.classList.add('right-bank-start');
+    slot.classList.add(i < 4 ? 'left-bank' : 'right-bank');
     const k = document.createElement('div');
     k.className = 'k';
     k.textContent = String(i + 1);
@@ -255,8 +273,9 @@ function renderInventory() {
 
     if (item) {
       slot.classList.add(item.kind);
-      const equipped = item.uid === self.equippedWeaponUid || item.uid === self.equippedSpellUid;
-      if (equipped) slot.classList.add('equipped');
+      if (item.uid === self.leftHandUid) slot.classList.add('equipped', 'left-equipped');
+      if (item.uid === self.rightHandUid) slot.classList.add('equipped', 'right-equipped');
+      if (item.uid === self.equippedSpellUid) slot.classList.add('equipped', 'spell-equipped');
       const name = document.createElement('div');
       name.className = 'name';
       name.textContent = item.name;
@@ -272,15 +291,30 @@ function renderInventory() {
         const m = document.createElement('div');
         m.textContent = `mp ${item.manaCost}`;
         slot.appendChild(m);
+      } else if (item.kind === 'shield') {
+        const d = document.createElement('div');
+        d.textContent = `dodge ${item.dodgeDistance}`;
+        slot.appendChild(d);
       }
       slot.addEventListener('click', () => sendAction(ACTION.EQUIP, { uid: item.uid }));
       slot.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         sendAction(ACTION.DROP, { uid: item.uid });
       });
+      slot.draggable = true;
+      slot.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', String(i));
+        e.dataTransfer.effectAllowed = 'move';
+      });
     } else {
       slot.classList.add('empty');
     }
+    slot.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+    slot.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const from = Number(e.dataTransfer.getData('text/plain'));
+      if (Number.isInteger(from)) sendAction(ACTION.MOVE_SLOT, { from, to: i });
+    });
     inventoryEl.appendChild(slot);
   }
 }
@@ -312,6 +346,10 @@ function handleEvent(ev) {
     case 'full': log(`inventory full — can't pick up ${ev.name}`, 'bad'); break;
     case 'nomana': log(`not enough mana for ${ev.name} (need ${ev.need})`, 'bad'); break;
     case 'swap': log(`swapping to ${ev.name}…`); break;
+    case 'unequip': log(`unequipped ${ev.name}`); break;
+    case 'dodge': log(`${ev.name}: dodge`); break;
+    case 'throw': log(`threw ${ev.name}`); break;
+    case 'windup': break;
     default: break;
   }
 }
@@ -580,6 +618,7 @@ function collectBillboards() {
   for (const o of others.values()) list.push({ kind: 'player', ref: o, x: o.x, y: o.y });
   for (const c of caches.values()) list.push({ kind: 'cache', ref: c, x: c.x, y: c.y });
   for (const d of drops.values()) list.push({ kind: 'drop', ref: d, x: d.x, y: d.y });
+  for (const p of projectiles.values()) list.push({ kind: 'projectile', ref: p, x: p.x, y: p.y });
 
   const visible = [];
   for (const item of list) {
@@ -605,7 +644,8 @@ function drawBillboards(horizon, floorScale, w, h) {
 
     if (item.kind === 'player') drawPlayerGlyph(item.ref, sx, feetY, fullH, item.dist);
     else if (item.kind === 'cache') drawCacheGlyph(sx, feetY, fullH);
-    else drawDropGlyph(item.ref, sx, feetY, fullH);
+    else if (item.kind === 'drop') drawDropGlyph(item.ref, sx, feetY, fullH);
+    else drawProjectileGlyph(item.ref, sx, feetY, fullH);
   }
 }
 
@@ -695,15 +735,28 @@ function drawPlayerGlyph(o, sx, feetY, fullH, dist) {
     ctx.fill();
   }
 
-  // A short blade breaks the cloak silhouette and reads as hunter.
-  ctx.strokeStyle = '#b8d8c6';
+  // A raised amber weapon telegraphs an incoming attack; after release it
+  // follows through across the cloak. Idle hunters keep the subtle blade.
+  const attackMotion = o.attack
+    ? (o.attack.phase === 'windup' ? -0.35 - o.attack.progress * 0.55 : -0.9 + o.attack.progress * 1.45)
+    : 0;
+  const weaponSide = o.attack?.hand === 'left' ? -1 : 1;
+  ctx.strokeStyle = o.attack?.phase === 'windup' ? '#ffcf4d' : '#b8d8c6';
   ctx.lineWidth = clamp(lineW * 0.65, 1, 2.5);
+  const gripX = sx + weaponSide * bodyW * 0.24;
+  const gripY = topY + bodyH * 0.55;
+  const bladeAngle = weaponSide > 0 ? 0.55 + attackMotion : Math.PI - 0.55 - attackMotion;
+  const bladeLen = bodyW * 0.42;
+  const tipX = gripX + Math.cos(bladeAngle) * bladeLen;
+  const tipY = gripY + Math.sin(bladeAngle) * bladeLen;
   ctx.beginPath();
-  ctx.moveTo(sx + bodyW * 0.24, topY + bodyH * 0.52);
-  ctx.lineTo(sx + bodyW * 0.58, topY + bodyH * 0.72);
-  ctx.moveTo(sx + bodyW * 0.38, topY + bodyH * 0.59);
-  ctx.lineTo(sx + bodyW * 0.48, topY + bodyH * 0.54);
+  ctx.moveTo(gripX, gripY);
+  ctx.lineTo(tipX, tipY);
+  ctx.moveTo(gripX - weaponSide * bodyW * 0.08, gripY - bodyH * 0.015);
+  ctx.lineTo(gripX + weaponSide * bodyW * 0.08, gripY + bodyH * 0.015);
   ctx.stroke();
+
+  if (o.cast) drawConvergingSparkles(sx, topY + bodyH * 0.3, bodyW * 1.25, o.cast.progress, o.cast.style, fog);
 
   ctx.restore();
 }
@@ -822,6 +875,160 @@ function drawDropGlyph(d, sx, feetY, fullH) {
   ctx.strokeRect(sx - size / 2, feetY - size, size, size);
 }
 
+function spellColor(style) {
+  if (style === 'knife') return '#e4ece8';
+  if (style === 'frost') return '#9de8ff';
+  if (style === 'ember') return '#ff7a3d';
+  if (style === 'mend') return '#76ff9f';
+  return '#d6b4ff';
+}
+
+function drawConvergingSparkles(cx, cy, radius, progress, style, alpha = 1) {
+  const color = spellColor(style);
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.fillStyle = color;
+  for (let i = 0; i < 12; i++) {
+    const angle = i * Math.PI * 2 / 12 + performance.now() / 900;
+    const wobble = 0.82 + 0.18 * Math.sin(performance.now() / 130 + i * 2.3);
+    const r = radius * (1 - progress * 0.88) * wobble;
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r * 0.65;
+    const size = clamp(radius * 0.035 * (0.7 + progress), 1, 4);
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawProjectileGlyph(projectile, sx, feetY, fullH) {
+  const r = clamp(fullH * 0.11 * projectile.energy, 3, 30);
+  const cy = feetY - fullH * 0.42;
+  const color = spellColor(projectile.style);
+  if (projectile.style === 'knife') {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = clamp(r * 0.45, 1.5, 4);
+    ctx.beginPath();
+    ctx.moveTo(sx - r * 1.8, cy + r * 0.8);
+    ctx.lineTo(sx + r * 1.8, cy - r * 0.8);
+    ctx.stroke();
+    return;
+  }
+  const glow = ctx.createRadialGradient(sx, cy, 0, sx, cy, r * 3.2);
+  glow.addColorStop(0, color);
+  glow.addColorStop(0.35, color);
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(sx - r * 3.2, cy - r * 3.2, r * 6.4, r * 6.4);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(sx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// First-person hand equipment. The authoritative attack phase comes from the
+// server snapshot; this layer only turns it into readable stab/swing motion.
+function drawFirstPersonLoadout() {
+  if (!self?.alive) return;
+  const left = self.inventory.find((item) => item?.uid === self.leftHandUid);
+  const right = self.inventory.find((item) => item?.uid === self.rightHandUid);
+  if (left) drawFirstPersonItem(left, 'left', self.attack?.hand === 'left' ? self.attack : null);
+  if (right) drawFirstPersonItem(right, 'right', self.attack?.hand === 'right' ? self.attack : null);
+}
+
+function drawFirstPersonSpellConvergence() {
+  if (!self?.cast) return;
+  const radius = Math.min(canvas.width, canvas.height) * 0.24;
+  drawConvergingSparkles(canvas.width / 2, canvas.height / 2, radius, self.cast.progress, self.cast.style, 0.9);
+}
+
+function drawFirstPersonItem(item, hand, attack) {
+  const w = canvas.width, h = canvas.height;
+  const side = hand === 'left' ? -1 : 1;
+  const baseX = hand === 'left' ? w * 0.22 : w * 0.78;
+  const baseY = h * 0.96;
+
+  if (item.kind === 'shield') {
+    const lift = self.dodgeRemaining > 0 ? h * 0.09 : 0;
+    const sw = clamp(w * 0.1, 55, 150);
+    const sh = sw * 0.82;
+    ctx.fillStyle = 'rgba(18,28,32,0.88)';
+    ctx.strokeStyle = self.dodgeRemaining > 0 ? '#9dffd0' : '#b8c7cf';
+    ctx.lineWidth = clamp(sw * 0.025, 2, 4);
+    ctx.beginPath();
+    ctx.moveTo(baseX - sw / 2, baseY - lift - sh * 0.8);
+    ctx.lineTo(baseX + sw / 2, baseY - lift - sh * 0.8);
+    ctx.lineTo(baseX + sw * 0.42, baseY - lift - sh * 0.2);
+    ctx.lineTo(baseX, baseY - lift);
+    ctx.lineTo(baseX - sw * 0.42, baseY - lift - sh * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(baseX, baseY - lift - sh * 0.72);
+    ctx.lineTo(baseX, baseY - lift - sh * 0.12);
+    ctx.stroke();
+    return;
+  }
+  if (item.kind !== 'weapon') return;
+
+  let gripX = baseX;
+  let gripY = baseY;
+  let angle = hand === 'left' ? -1.02 : -2.12;
+  const style = item.attackStyle || 'swing';
+  if (attack) {
+    const p = attack.progress;
+    if (style === 'stab' || style === 'thrust') {
+      const reach = attack.phase === 'windup' ? -p * 0.12 : Math.sin(p * Math.PI) * (style === 'thrust' ? 0.34 : 0.25);
+      gripX += side * w * (attack.phase === 'windup' ? 0.04 * p : -0.12 * Math.sin(p * Math.PI));
+      gripY -= h * reach;
+      angle = hand === 'left' ? -1.18 : -1.96;
+    } else if (style === 'throw') {
+      const throwReach = attack.phase === 'windup' ? -p * 0.45 : -0.45 + p * 1.15;
+      angle += side * throwReach;
+      gripY -= h * 0.08 * Math.sin(p * Math.PI);
+    } else {
+      const sweep = attack.phase === 'windup' ? p * -0.75 : -0.75 + p * (style === 'cleave' ? 2.2 : 1.7);
+      angle += side * sweep;
+      gripY -= h * 0.04 * Math.sin(p * Math.PI);
+      if (style === 'cleave' && attack.phase === 'release') {
+        ctx.strokeStyle = `rgba(255,159,90,${(0.42 * (1 - p)).toFixed(2)})`;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(w / 2, h * 0.72, w * 0.23, Math.PI * 1.08, Math.PI * 1.92);
+        ctx.stroke();
+      }
+    }
+  }
+
+  const weaponLen = clamp(h * (style === 'thrust' ? 0.42 : 0.31), 100, 360);
+  const handleLen = weaponLen * 0.25;
+  const tipX = gripX + Math.cos(angle) * weaponLen;
+  const tipY = gripY + Math.sin(angle) * weaponLen;
+  const handleX = gripX - Math.cos(angle) * handleLen;
+  const handleY = gripY - Math.sin(angle) * handleLen;
+
+  ctx.strokeStyle = attack?.phase === 'windup' ? '#ffcf4d' : '#d6e2dc';
+  ctx.lineWidth = clamp(h * 0.008, 3, 8);
+  ctx.beginPath();
+  ctx.moveTo(handleX, handleY);
+  ctx.lineTo(gripX, gripY);
+  ctx.stroke();
+  ctx.strokeStyle = '#eef7f2';
+  ctx.lineWidth = clamp(h * 0.005, 2, 6);
+  ctx.beginPath();
+  ctx.moveTo(gripX, gripY);
+  ctx.lineTo(tipX, tipY);
+  ctx.stroke();
+  ctx.strokeStyle = '#ff9f5a';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(gripX - Math.sin(angle) * 18, gripY + Math.cos(angle) * 18);
+  ctx.lineTo(gripX + Math.sin(angle) * 18, gripY - Math.cos(angle) * 18);
+  ctx.stroke();
+}
+
 // ---------------------------------------------------------------------
 // minimap — small corner HUD, only the tiles this player has explored
 // ---------------------------------------------------------------------
@@ -889,6 +1096,8 @@ function loop(now) {
 
   if (self) {
     drawScene();
+    drawFirstPersonSpellConvergence();
+    drawFirstPersonLoadout();
     drawMinimap();
     audio.updateListener(renderX, renderY, viewAngle);
     const selfMoving = self.alive && (

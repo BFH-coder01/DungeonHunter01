@@ -32,6 +32,7 @@ export const CONFIG = {
     speed: [3.2, 5.4], // tiles per second
     manaRegenPerSec: [2.5, 6.0],
     inventorySize: 8,
+    inventorySideSize: 4,
     // Swapping a held item is deliberate: you stop, you swap, you move on.
     weaponSwapMs: 900,
     // Attribute floors/ceilings after caches have been applied. Keys must

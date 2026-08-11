@@ -4,7 +4,7 @@
 
 import { TILE } from '../shared/constants.js';
 import { CONFIG } from '../shared/config.js';
-import { rollCacheItem } from '../shared/items.js';
+import { makeShield, rollCacheItem } from '../shared/items.js';
 import { AMBIENT_POINT_COUNT, AMBIENT_SOUNDS } from '../shared/sounds.js';
 
 const idx = (level, x, y) => y * level.width + x;
@@ -160,6 +160,11 @@ function generateLevel(depth, totalLevels, rng) {
     item: rollCacheItem(rng),
     looted: false,
   }));
+  // Dodge is a cache-earned mechanic, but every generated level must contain
+  // at least one shield so the mechanic is always discoverable and testable.
+  if (level.caches.length && !level.caches.some((cache) => cache.item.kind === 'shield')) {
+    level.caches[rng.int(0, level.caches.length - 1)].item = makeShield('iron_buckler');
+  }
 
   // Ambient sources are authoritative seeded dungeon entities, like caches.
   const soundSpots = pickSpread(open, AMBIENT_POINT_COUNT, 5, rng);

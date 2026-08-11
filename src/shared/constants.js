@@ -37,5 +37,6 @@ export const ACTION = {
   PICKUP: 'pickup',
   DROP: 'drop',
   EQUIP: 'equip',
+  MOVE_SLOT: 'move_slot',
   USE: 'use',
 };

@@ -1,24 +1,30 @@
 // Item catalogue. A cache rolls from these tables.
 //
-// Two families matter for the control scheme:
+// Three families matter for the control scheme:
 //   - kind 'weapon': held in hand. Swapping costs `player.weaponSwapMs`, so a
 //     weapon change is a commitment, not a hotkey tap.
+//   - kind 'shield': held in hand. Activating that hand performs a dodge.
 //   - kind 'spell':  known, not held. Castable immediately as long as you have
 //     the mana and the cooldown is up — the fast option, gated by regen.
 
 export const WEAPONS = {
-  rusted_dagger: { name: 'Rusted Dagger', damage: 8, range: 1.1, swingMs: 320 },
-  short_sword: { name: 'Short Sword', damage: 14, range: 1.4, swingMs: 480 },
-  war_axe: { name: 'War Axe', damage: 24, range: 1.5, swingMs: 820 },
-  spear: { name: 'Spear', damage: 16, range: 2.2, swingMs: 640 },
-  maul: { name: 'Maul', damage: 34, range: 1.6, swingMs: 1150 },
+  rusted_dagger: { name: 'Rusted Dagger', damage: 8, range: 1.1, windupMs: 110, swingMs: 320, attackStyle: 'stab', minDot: 0.9, maxTargets: 1 },
+  short_sword: { name: 'Short Sword', damage: 14, range: 1.4, windupMs: 180, swingMs: 480, attackStyle: 'swing', minDot: 0.65, maxTargets: 1 },
+  war_axe: { name: 'War Axe', damage: 24, range: 1.5, windupMs: 330, swingMs: 820, attackStyle: 'cleave', minDot: 0.3, maxTargets: 3 },
+  spear: { name: 'Spear', damage: 16, range: 2.2, windupMs: 240, swingMs: 640, attackStyle: 'thrust', minDot: 0.94, maxTargets: 1 },
+  maul: { name: 'Maul', damage: 34, range: 1.6, windupMs: 500, swingMs: 1150, attackStyle: 'swing', minDot: 0.58, maxTargets: 1, knockback: 0.75 },
+  throwing_knife: { name: 'Throwing Knife', damage: 12, range: 7, windupMs: 250, swingMs: 600, attackStyle: 'throw', minDot: 1, maxTargets: 1, throwable: true, projectileSpeed: 9 },
+};
+
+export const SHIELDS = {
+  iron_buckler: { name: 'Iron Buckler', dodgeDistance: 1.8, dodgeMs: 240, cooldownMs: 1600 },
 };
 
 export const SPELLS = {
-  spark: { name: 'Spark', damage: 10, range: 6, manaCost: 8, cooldownMs: 450 },
-  frost_lance: { name: 'Frost Lance', damage: 18, range: 9, manaCost: 16, cooldownMs: 900 },
-  ember_burst: { name: 'Ember Burst', damage: 26, range: 4, manaCost: 24, cooldownMs: 1200 },
-  mend: { name: 'Mend', heal: 25, range: 0, manaCost: 20, cooldownMs: 2000 },
+  spark: { name: 'Spark', damage: 10, range: 6, manaCost: 8, windupMs: 320, cooldownMs: 650, projectileSpeed: 8, projectileStyle: 'spark' },
+  frost_lance: { name: 'Frost Lance', damage: 18, range: 9, manaCost: 16, windupMs: 560, cooldownMs: 1100, projectileSpeed: 11, projectileStyle: 'frost', slowMs: 1400 },
+  ember_burst: { name: 'Ember Burst', damage: 26, range: 4, manaCost: 24, windupMs: 720, cooldownMs: 1500, projectileSpeed: 5.5, projectileStyle: 'ember', blastRadius: 1.6 },
+  mend: { name: 'Mend', heal: 25, range: 0, manaCost: 20, windupMs: 800, cooldownMs: 2200, projectileStyle: 'mend' },
 };
 
 // Attribute modifiers a cache can hold. Negative rolls are intentional — a
@@ -46,6 +52,11 @@ export function makeSpell(key) {
   return { uid: `i${nextItemId++}`, kind: 'spell', key, name: def.name, ...def };
 }
 
+export function makeShield(key) {
+  const def = SHIELDS[key];
+  return { uid: `i${nextItemId++}`, kind: 'shield', key, name: def.name, ...def };
+}
+
 export function makeBoon(rng) {
   const b = rng.pick(BOONS);
   const raw = rng.float(b.delta[0], b.delta[1]);
@@ -58,7 +69,8 @@ export function makeBoon(rng) {
 // One cache holds one item. Weighted so weapons are the common find.
 export function rollCacheItem(rng) {
   const r = rng();
-  if (r < 0.45) return makeWeapon(rng.pick(Object.keys(WEAPONS)));
-  if (r < 0.75) return makeSpell(rng.pick(Object.keys(SPELLS)));
+  if (r < 0.40) return makeWeapon(rng.pick(Object.keys(WEAPONS)));
+  if (r < 0.52) return makeShield(rng.pick(Object.keys(SHIELDS)));
+  if (r < 0.78) return makeSpell(rng.pick(Object.keys(SPELLS)));
   return makeBoon(rng);
 }

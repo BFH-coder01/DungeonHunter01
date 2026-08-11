@@ -149,6 +149,7 @@ setInterval(() => {
     if (!ws.player || !game.players.has(ws.player.id)) continue;
     send(ws, { type: MSG.STATE, ...game.snapshotFor(ws.player) });
   }
+  game.clearEvents();
 }, TICK_MS);
 
 function lanAddresses() {

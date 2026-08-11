@@ -78,12 +78,15 @@ duplication to drift out of sync.
   keyboard snap-turn, which yanked your facing (and therefore "forward")
   straight into a wall mid-corridor — holding to turn gradually doesn't have
   that problem.
-- Attack (equipped weapon): left click
-- Cast (equipped spell): right click / space
+- Activate left hand: Z or left click
+- Activate right hand: M or right click
+- Cast prepared spell: Space
 - Open a cache / pick up a floor item: E or O. Caches can be opened from
   about a tile away; loose floor items need you standing on them.
-- Inventory: click a slot to equip it, right-click a slot to drop it. Number
-  keys 1–8 also equip a slot.
+- Inventory: slots 1–4 belong to the left hand and 5–8 to the right. Click or
+  press 1–8 to equip/toggle an item on that side, drag slots to rearrange the
+  loadout, and right-click to drop. A shield activates a directional dodge;
+  two equipped weapons make the left weapon an off-hand attack at half damage.
 
 The DungeonMaster view has no controls — it's a read-only overview. Just open
 `/dm.html` and watch.
@@ -162,6 +165,17 @@ uses, so direction matches what's on screen.
   ~20Hz server snapshots with light exponential smoothing to take the edge
   off the tick rate. Worth revisiting if movement ever feels laggy on a
   busier LAN.
+- Weapon attacks have server-timed windup and release phases. Dagger stab,
+  sword/maul swing, axe cleave, and spear thrust use different arcs, ranges,
+  target counts, and first-person motion. Shields are cache items and every
+  level is guaranteed at least one; activating that hand performs a short
+  directional dodge with a brief invulnerability window and cooldown.
+- Spells visibly converge as sparkles before release. Spark, Frost Lance, and
+  Ember Burst then travel as server-authoritative straight-line projectiles;
+  they lose damage energy with distance and stop on walls, unopened chests, or
+  players. Frost slows on a real hit, Ember splashes nearby targets, and Mend
+  heals only after its windup completes. Throwing Knives use the same travel
+  model but land as recoverable floor items after impact or range expiry.
 
 ## Known gaps in this pass
 

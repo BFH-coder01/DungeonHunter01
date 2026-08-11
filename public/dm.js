@@ -18,6 +18,7 @@ let players = [];
 let caches = [];
 let drops = [];
 let soundPoints = [];
+let projectiles = [];
 
 // Must match FOOTSTEP_MAX_DIST in public/audio.js — how far another
 // player's footsteps are audible, used to draw the "who's making noise"
@@ -59,6 +60,7 @@ function onState(msg) {
   players = msg.players;
   caches = msg.caches;
   drops = msg.drops;
+  projectiles = msg.projectiles || [];
   updateMoving();
   updateHeader();
 }
@@ -165,6 +167,17 @@ function drawDrops(fit) {
   }
 }
 
+function drawProjectiles(fit) {
+  const { tile, offX, offY } = fit;
+  for (const p of projectiles) {
+    const sx = offX + p.x * tile, sy = offY + p.y * tile;
+    ctx.fillStyle = p.style === 'ember' ? '#ff7a3d' : p.style === 'frost' ? '#9de8ff' : p.style === 'knife' ? '#e4ece8' : '#d6b4ff';
+    ctx.beginPath();
+    ctx.arc(sx, sy, Math.max(2, tile * 0.18 * p.energy), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function drawSoundPoints(fit) {
   const { tile, offX, offY } = fit;
   const pulse = 1 + Math.sin(performance.now() / 450) * 0.1;
@@ -239,6 +252,7 @@ function loop() {
     drawSoundPoints(fit);
     drawCaches(fit);
     drawDrops(fit);
+    drawProjectiles(fit);
     drawPlayers(fit);
   }
 

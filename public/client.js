@@ -1,21 +1,21 @@
-import { TILE, MSG, ACTION } from '/shared/constants.js';
+import { TILE, MSG, ACTION, SIGHT_RADIUS } from '/shared/constants.js';
 
 // ---------------------------------------------------------------------
 // connection state
 // ---------------------------------------------------------------------
 
 let ws = null;
-let selfId = null;
 let width = 0, height = 0;
 let map = new Int8Array(0); // -1 unseen, else TILE.*
 let self = null;
 let others = new Map();
 let caches = new Map();
 let drops = new Map();
-let lastServerTime = 0;
 
 const canvas = document.getElementById('view');
 const ctx = canvas.getContext('2d');
+const minimapCanvas = document.getElementById('minimap');
+const mctx = minimapCanvas.getContext('2d');
 
 function resize() {
   canvas.width = window.innerWidth;
@@ -32,6 +32,7 @@ const joinOverlay = document.getElementById('join');
 const hud = document.getElementById('hud');
 const nameInput = document.getElementById('nameInput');
 const joinBtn = document.getElementById('joinBtn');
+const lookHint = document.getElementById('lookHint');
 
 nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doJoin(); });
 joinBtn.addEventListener('click', doJoin);
@@ -55,25 +56,25 @@ function onMessage(evt) {
   if (msg.type === MSG.STATE) return onState(msg);
 }
 
+let viewAngleInit = false;
+
 function onWelcome(msg) {
-  selfId = msg.you;
   width = msg.width;
   height = msg.height;
   map = new Int8Array(width * height).fill(-1);
   joinOverlay.classList.add('hidden');
   hud.classList.remove('hidden');
+  lookHint.classList.remove('hidden');
   log(`Dungeon seed ${msg.seed} — level ${msg.level + 1}/${msg.totalLevels}${msg.revealAll ? ' (full map test mode)' : ''}`, 'good');
   requestAnimationFrame(loop);
 }
 
 function onState(msg) {
-  lastServerTime = msg.t;
-
-  // apply newly revealed tiles
   const rev = msg.reveal;
   for (let i = 0; i < rev.length; i += 2) map[rev[i]] = rev[i + 1];
 
   self = msg.self;
+  if (!viewAngleInit) { viewAngle = self.aim; viewAngleInit = true; }
 
   others = new Map(msg.others.map((o) => [o.id, o]));
   caches = new Map(msg.caches.map((c) => [c.id, c]));
@@ -85,13 +86,38 @@ function onState(msg) {
 }
 
 // ---------------------------------------------------------------------
-// input
+// look (pointer lock) + movement input
 // ---------------------------------------------------------------------
 
-const keys = new Set();
-let mouseScreen = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-let selectedSlot = 0;
+const MOUSE_SENS = 0.0022;
+let viewAngle = 0;
+let locked = false;
 
+canvas.addEventListener('mousedown', (e) => {
+  if (!locked) { canvas.requestPointerLock(); return; }
+  if (e.button === 0) sendAction(ACTION.ATTACK);
+  if (e.button === 2) sendAction(ACTION.CAST);
+});
+lookHint.addEventListener('click', () => canvas.requestPointerLock());
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+document.addEventListener('pointerlockchange', () => {
+  locked = document.pointerLockElement === canvas;
+  lookHint.classList.toggle('hidden', locked);
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!locked) return;
+  viewAngle = normalizeAngle(viewAngle + e.movementX * MOUSE_SENS);
+});
+
+function normalizeAngle(a) {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
+const keys = new Set();
 window.addEventListener('keydown', (e) => {
   if (document.activeElement === nameInput) return;
   keys.add(e.key.toLowerCase());
@@ -101,15 +127,6 @@ window.addEventListener('keydown', (e) => {
   if (n >= 1 && n <= 8) equipSlot(n - 1);
 });
 window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
-
-canvas.addEventListener('mousemove', (e) => {
-  mouseScreen = { x: e.clientX, y: e.clientY };
-});
-canvas.addEventListener('mousedown', (e) => {
-  if (e.button === 0) sendAction(ACTION.ATTACK);
-  if (e.button === 2) sendAction(ACTION.CAST);
-});
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 function sendAction(action, extra) {
   if (!ws || ws.readyState !== ws.OPEN) return;
@@ -122,21 +139,27 @@ function pumpInput(now) {
   if (now - lastInputSent < 50) return;
   lastInputSent = now;
 
+  let fb = 0, lr = 0;
+  if (keys.has('w') || keys.has('arrowup')) fb += 1;
+  if (keys.has('s') || keys.has('arrowdown')) fb -= 1;
+  if (keys.has('d') || keys.has('arrowright')) lr += 1;
+  if (keys.has('a') || keys.has('arrowleft')) lr -= 1;
+
   let mx = 0, my = 0;
-  if (keys.has('w') || keys.has('arrowup')) my -= 1;
-  if (keys.has('s') || keys.has('arrowdown')) my += 1;
-  if (keys.has('a') || keys.has('arrowleft')) mx -= 1;
-  if (keys.has('d') || keys.has('arrowright')) mx += 1;
+  if (fb !== 0 || lr !== 0) {
+    const fx = Math.cos(viewAngle), fy = Math.sin(viewAngle);
+    const rx = Math.cos(viewAngle + Math.PI / 2), ry = Math.sin(viewAngle + Math.PI / 2);
+    mx = fx * fb + rx * lr;
+    my = fy * fb + ry * lr;
+    const len = Math.hypot(mx, my);
+    if (len > 0) { mx /= len; my /= len; }
+  }
 
-  const cx = window.innerWidth / 2;
-  const cy = window.innerHeight / 2;
-  const aim = Math.atan2(mouseScreen.y - cy, mouseScreen.x - cx);
-
-  ws.send(JSON.stringify({ type: MSG.INPUT, mx, my, aim }));
+  ws.send(JSON.stringify({ type: MSG.INPUT, mx, my, aim: viewAngle }));
 }
 
 // ---------------------------------------------------------------------
-// inventory / HUD
+// inventory / HUD (unchanged from the DM-view build)
 // ---------------------------------------------------------------------
 
 const hpFill = document.getElementById('hpFill');
@@ -246,139 +269,280 @@ function handleEvent(ev) {
 }
 
 // ---------------------------------------------------------------------
-// rendering — wireframe / vector style
+// first-person wireframe raycaster
 // ---------------------------------------------------------------------
 
-const TILE_PX = 26;
-const INK = '#35ff8a';
-const INK_DIM = '#14612f';
+const FOV = 70 * Math.PI / 180;
+const RAYS = 240;
+const MAX_DIST = SIGHT_RADIUS;
 
-function worldToScreen(wx, wy) {
-  const cx = window.innerWidth / 2;
-  const cy = window.innerHeight / 2;
-  return {
-    x: cx + (wx - self.x) * TILE_PX,
-    y: cy + (wy - self.y) * TILE_PX,
-  };
+let renderX = null, renderY = null;
+let lastFrameT = performance.now();
+
+function updateSmoothing(dt) {
+  if (!self) return;
+  if (renderX === null) { renderX = self.x; renderY = self.y; return; }
+  const k = Math.min(1, dt * 14);
+  renderX += (self.x - renderX) * k;
+  renderY += (self.y - renderY) * k;
 }
 
-function drawMap() {
-  const cx = window.innerWidth / 2;
-  const cy = window.innerHeight / 2;
-  const tilesX = Math.ceil(window.innerWidth / TILE_PX) + 2;
-  const tilesY = Math.ceil(window.innerHeight / TILE_PX) + 2;
-  const startX = Math.floor(self.x - tilesX / 2);
-  const startY = Math.floor(self.y - tilesY / 2);
+function tileBlocked(tx, ty) {
+  if (tx < 0 || ty < 0 || tx >= width || ty >= height) return true;
+  const v = map[ty * width + tx];
+  return v === -1 || v === TILE.WALL;
+}
 
-  for (let ty = startY; ty < startY + tilesY; ty++) {
-    if (ty < 0 || ty >= height) continue;
-    for (let tx = startX; tx < startX + tilesX; tx++) {
-      if (tx < 0 || tx >= width) continue;
-      const v = map[ty * width + tx];
-      if (v === -1) continue; // unexplored — fog, draw nothing
+// Lode's DDA raycast: steps grid cells until a wall (or unexplored cell) is
+// hit, returning the perpendicular (non-fisheye) distance directly.
+function castRay(px, py, angle) {
+  const dirX = Math.cos(angle), dirY = Math.sin(angle);
+  let mapX = Math.floor(px), mapY = Math.floor(py);
+  const deltaDistX = dirX === 0 ? 1e30 : Math.abs(1 / dirX);
+  const deltaDistY = dirY === 0 ? 1e30 : Math.abs(1 / dirY);
+  let stepX, stepY, sideDistX, sideDistY;
+  if (dirX < 0) { stepX = -1; sideDistX = (px - mapX) * deltaDistX; }
+  else { stepX = 1; sideDistX = (mapX + 1 - px) * deltaDistX; }
+  if (dirY < 0) { stepY = -1; sideDistY = (py - mapY) * deltaDistY; }
+  else { stepY = 1; sideDistY = (mapY + 1 - py) * deltaDistY; }
 
-      const sx = cx + (tx - self.x) * TILE_PX;
-      const sy = cy + (ty - self.y) * TILE_PX;
-
-      if (v === TILE.WALL) {
-        ctx.strokeStyle = INK_DIM;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(sx + 0.5, sy + 0.5, TILE_PX - 1, TILE_PX - 1);
-      } else {
-        // floor: faint corner ticks only, keeps the wireframe feel light
-        ctx.strokeStyle = 'rgba(20, 97, 47, 0.35)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(sx + 0.5, sy + 0.5, TILE_PX - 1, TILE_PX - 1);
-        if (v === TILE.STAIRS_DOWN || v === TILE.STAIRS_UP) {
-          ctx.strokeStyle = '#ffcf4d';
-          ctx.beginPath();
-          const mx = sx + TILE_PX / 2, my = sy + TILE_PX / 2, r = TILE_PX * 0.3;
-          ctx.moveTo(mx, my - r); ctx.lineTo(mx + r, my); ctx.lineTo(mx, my + r); ctx.lineTo(mx - r, my);
-          ctx.closePath();
-          ctx.stroke();
-        }
-      }
+  let side = 0;
+  const maxSteps = Math.ceil(MAX_DIST * 2) + 6;
+  for (let i = 0; i < maxSteps; i++) {
+    if (sideDistX < sideDistY) { sideDistX += deltaDistX; mapX += stepX; side = 0; }
+    else { sideDistY += deltaDistY; mapY += stepY; side = 1; }
+    if (mapX < 0 || mapY < 0 || mapX >= width || mapY >= height) {
+      return { dist: MAX_DIST, side, unknown: false };
     }
+    const v = map[mapY * width + mapX];
+    if (v === -1 || v === TILE.WALL) {
+      const dist = side === 0 ? sideDistX - deltaDistX : sideDistY - deltaDistY;
+      return { dist: Math.min(dist, MAX_DIST), side, unknown: v === -1 };
+    }
+  }
+  return { dist: MAX_DIST, side, unknown: false };
+}
+
+function clientHasLineOfSight(x0, y0, x1, y1) {
+  const dx = x1 - x0, dy = y1 - y0;
+  const steps = Math.ceil(Math.hypot(dx, dy) * 2);
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    if (tileBlocked(Math.floor(x0 + dx * t), Math.floor(y0 + dy * t))) return false;
+  }
+  return true;
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function wallHeightAt(dist, h) {
+  return Math.min(h * 4, (h * 0.9) / Math.max(0.05, dist));
+}
+
+function drawScene() {
+  const w = canvas.width, h = canvas.height;
+  const horizon = h / 2;
+  const floorScale = h * 0.62;
+
+  ctx.fillStyle = '#030507';
+  ctx.fillRect(0, 0, w, horizon);
+  ctx.fillStyle = '#050a06';
+  ctx.fillRect(0, horizon, w, h - horizon);
+
+  // floor perspective bands — cheap depth cue, not per-tile accurate
+  for (const d of [1, 1.5, 2, 3, 4, 6, MAX_DIST]) {
+    const y = horizon + floorScale / d;
+    if (y > h) continue;
+    const alpha = Math.max(0.04, (1 - d / MAX_DIST) * 0.35);
+    ctx.strokeStyle = `rgba(20,97,47,${alpha.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+
+  const columns = new Array(RAYS);
+  for (let i = 0; i < RAYS; i++) {
+    const t = i / (RAYS - 1);
+    const rayAngle = viewAngle - FOV / 2 + t * FOV;
+    const res = castRay(renderX, renderY, rayAngle);
+    const dist = Math.max(0.05, res.dist * Math.cos(rayAngle - viewAngle));
+    const wallH = wallHeightAt(dist, h);
+    columns[i] = { x: t * w, top: horizon - wallH / 2, bot: horizon + wallH / 2, dist, side: res.side, unknown: res.unknown };
+  }
+
+  // connective skyline top/bottom — the "wireframe mesh" read of the corridor
+  ctx.strokeStyle = 'rgba(53,255,138,0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  columns.forEach((c, i) => (i === 0 ? ctx.moveTo(c.x, c.top) : ctx.lineTo(c.x, c.top)));
+  ctx.stroke();
+  ctx.beginPath();
+  columns.forEach((c, i) => (i === 0 ? ctx.moveTo(c.x, c.bot) : ctx.lineTo(c.x, c.bot)));
+  ctx.stroke();
+
+  // individual wall slices, spaced with visible gaps for a vector-scanline look
+  for (const c of columns) {
+    const fog = Math.max(0, 1 - c.dist / MAX_DIST);
+    const brightness = c.side === 0 ? 1 : 0.55;
+    const alpha = Math.max(0.05, fog * brightness);
+    ctx.strokeStyle = c.unknown
+      ? `rgba(255,207,77,${(alpha * 0.5).toFixed(3)})`
+      : `rgba(53,255,138,${alpha.toFixed(3)})`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(c.x, c.top);
+    ctx.lineTo(c.x, c.bot);
+    ctx.stroke();
+  }
+
+  drawBillboards(horizon, floorScale, w, h);
+}
+
+function collectBillboards() {
+  const list = [];
+  for (const o of others.values()) list.push({ kind: 'player', ref: o, x: o.x, y: o.y });
+  for (const c of caches.values()) list.push({ kind: 'cache', ref: c, x: c.x, y: c.y });
+  for (const d of drops.values()) list.push({ kind: 'drop', ref: d, x: d.x, y: d.y });
+
+  const visible = [];
+  for (const item of list) {
+    const dx = item.x - renderX, dy = item.y - renderY;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 0.05 || dist > MAX_DIST) continue;
+    const diff = normalizeAngle(Math.atan2(dy, dx) - viewAngle);
+    if (Math.abs(diff) > FOV / 2 + 0.3) continue;
+    if (!clientHasLineOfSight(renderX, renderY, item.x, item.y)) continue;
+    item.dist = dist * Math.cos(diff);
+    item.diff = diff;
+    visible.push(item);
+  }
+  visible.sort((a, b) => b.dist - a.dist); // painter's algorithm: far first
+  return visible;
+}
+
+function drawBillboards(horizon, floorScale, w, h) {
+  for (const item of collectBillboards()) {
+    const sx = w * (0.5 + item.diff / FOV);
+    const feetY = Math.min(h, horizon + floorScale / Math.max(0.2, item.dist));
+    const fullH = wallHeightAt(item.dist, h);
+
+    if (item.kind === 'player') drawPlayerGlyph(item.ref, sx, feetY, fullH, item.dist);
+    else if (item.kind === 'cache') drawCacheGlyph(sx, feetY, fullH);
+    else drawDropGlyph(item.ref, sx, feetY, fullH);
   }
 }
 
-function drawDiamond(sx, sy, r, color) {
+function drawPlayerGlyph(o, sx, feetY, fullH, dist) {
+  const fog = Math.max(0.12, 1 - dist / MAX_DIST);
+  const bodyH = clamp(fullH * 0.62, 10, canvas.height * 1.6);
+  const bodyW = bodyH * 0.4;
+  const headR = bodyW * 0.5;
+  const color = `rgba(53,255,138,${fog.toFixed(3)})`;
+  const topY = feetY - bodyH;
+
   ctx.strokeStyle = color;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = clamp(bodyW * 0.06, 1, 3);
   ctx.beginPath();
-  ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r, sy); ctx.lineTo(sx, sy + r); ctx.lineTo(sx - r, sy);
+  ctx.moveTo(sx - bodyW / 2, feetY);
+  ctx.lineTo(sx - bodyW / 2, topY + headR);
+  ctx.arc(sx, topY + headR, headR, Math.PI, 0);
+  ctx.lineTo(sx + bodyW / 2, feetY);
+  ctx.stroke();
+
+  ctx.fillStyle = color;
+  ctx.font = `${clamp(bodyH * 0.09, 10, 18)}px Courier New, monospace`;
+  ctx.textAlign = 'center';
+  ctx.fillText(`${o.name} ${o.hp}%`, sx, topY - 6);
+}
+
+function drawCacheGlyph(sx, feetY, fullH) {
+  const size = clamp(fullH * 0.3, 8, canvas.height * 0.5);
+  const cy = feetY - size / 2;
+  const pulse = 1 + Math.sin(performance.now() / 400) * 0.08;
+  ctx.strokeStyle = '#ffcf4d';
+  ctx.lineWidth = clamp(size * 0.05, 1, 3);
+  ctx.beginPath();
+  ctx.moveTo(sx, cy - size * pulse); ctx.lineTo(sx + size * pulse, cy);
+  ctx.lineTo(sx, cy + size * pulse); ctx.lineTo(sx - size * pulse, cy);
   ctx.closePath();
   ctx.stroke();
 }
 
-function drawCaches() {
-  const t = performance.now() / 400;
+function drawDropGlyph(d, sx, feetY, fullH) {
+  const size = clamp(fullH * 0.22, 6, canvas.height * 0.4);
+  ctx.strokeStyle = d.kind === 'weapon' ? '#ff9f5a' : '#4dc3ff';
+  ctx.lineWidth = clamp(size * 0.08, 1, 3);
+  ctx.strokeRect(sx - size / 2, feetY - size, size, size);
+}
+
+// ---------------------------------------------------------------------
+// minimap — small corner HUD, only the tiles this player has explored
+// ---------------------------------------------------------------------
+
+function drawMinimap() {
+  const size = minimapCanvas.width;
+  mctx.clearRect(0, 0, size, size);
+  if (!self) return;
+
+  const tilePx = 6;
+  const radiusTiles = size / tilePx / 2;
+  const cx = self.x, cy = self.y;
+
+  for (let dy = -Math.ceil(radiusTiles); dy <= radiusTiles; dy++) {
+    for (let dx = -Math.ceil(radiusTiles); dx <= radiusTiles; dx++) {
+      const tx = Math.floor(cx + dx), ty = Math.floor(cy + dy);
+      if (tx < 0 || ty < 0 || tx >= width || ty >= height) continue;
+      const v = map[ty * width + tx];
+      if (v === -1) continue;
+      const sx = size / 2 + (tx - cx) * tilePx;
+      const sy = size / 2 + (ty - cy) * tilePx;
+      mctx.fillStyle = v === TILE.WALL ? '#14612f' : 'rgba(20,97,47,0.4)';
+      mctx.fillRect(sx, sy, tilePx - 0.5, tilePx - 0.5);
+    }
+  }
+
+  mctx.fillStyle = '#ffcf4d';
   for (const c of caches.values()) {
-    const p = worldToScreen(c.x, c.y);
-    const pulse = 1 + Math.sin(t) * 0.08;
-    drawDiamond(p.x, p.y, 9 * pulse, '#ffcf4d');
+    const sx = size / 2 + (c.x - cx) * tilePx, sy = size / 2 + (c.y - cy) * tilePx;
+    if (sx < 0 || sx > size || sy < 0 || sy > size) continue;
+    mctx.fillRect(sx - 2, sy - 2, 4, 4);
   }
-}
 
-function drawDrops() {
-  for (const d of drops.values()) {
-    const p = worldToScreen(d.x, d.y);
-    ctx.strokeStyle = d.kind === 'weapon' ? '#ff9f5a' : '#4dc3ff';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(p.x - 6, p.y - 6, 12, 12);
+  mctx.fillStyle = '#35ff8a';
+  for (const o of others.values()) {
+    const sx = size / 2 + (o.x - cx) * tilePx, sy = size / 2 + (o.y - cy) * tilePx;
+    if (sx < 0 || sx > size || sy < 0 || sy > size) continue;
+    mctx.beginPath();
+    mctx.arc(sx, sy, 3, 0, Math.PI * 2);
+    mctx.fill();
   }
-}
 
-function drawPlayer(p, isSelf) {
-  const pos = isSelf ? { x: window.innerWidth / 2, y: window.innerHeight / 2 } : worldToScreen(p.x, p.y);
-  const r = 11;
-  const color = isSelf ? '#ffffff' : INK;
-
-  ctx.strokeStyle = color;
-  ctx.lineWidth = isSelf ? 2 : 1.5;
-  ctx.beginPath();
-  ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-  ctx.stroke();
-
-  // facing line
-  const aim = isSelf ? self.aim : (p.aim || 0);
-  ctx.beginPath();
-  ctx.moveTo(pos.x, pos.y);
-  ctx.lineTo(pos.x + Math.cos(aim) * (r + 10), pos.y + Math.sin(aim) * (r + 10));
-  ctx.stroke();
-
-  // name + hp
-  ctx.fillStyle = color;
-  ctx.font = '11px Courier New, monospace';
-  ctx.textAlign = 'center';
-  const label = isSelf ? '' : `${p.name} ${p.hp}%`;
-  if (label) ctx.fillText(label, pos.x, pos.y - r - 8);
-}
-
-function drawCrosshair() {
-  if (!self.alive) return;
-  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-  ctx.lineWidth = 1;
-  const { x, y } = mouseScreen;
-  ctx.beginPath();
-  ctx.moveTo(x - 6, y); ctx.lineTo(x + 6, y);
-  ctx.moveTo(x, y - 6); ctx.lineTo(x, y + 6);
-  ctx.stroke();
+  mctx.fillStyle = '#ffffff';
+  mctx.strokeStyle = '#ffffff';
+  mctx.lineWidth = 1.5;
+  mctx.beginPath();
+  mctx.arc(size / 2, size / 2, 3.5, 0, Math.PI * 2);
+  mctx.fill();
+  mctx.beginPath();
+  mctx.moveTo(size / 2, size / 2);
+  mctx.lineTo(size / 2 + Math.cos(viewAngle) * 11, size / 2 + Math.sin(viewAngle) * 11);
+  mctx.stroke();
 }
 
 function loop(now) {
+  const dt = Math.min(0.1, (now - lastFrameT) / 1000);
+  lastFrameT = now;
+
   pumpInput(now);
+  updateSmoothing(dt);
 
   ctx.fillStyle = '#04070a';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (self) {
-    drawMap();
-    drawCaches();
-    drawDrops();
-    for (const o of others.values()) drawPlayer(o, false);
-    drawPlayer(self, true);
-    drawCrosshair();
+    drawScene();
+    drawMinimap();
   }
 
   requestAnimationFrame(loop);

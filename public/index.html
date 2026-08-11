@@ -16,14 +16,19 @@
       <input id="nameInput" maxlength="16" placeholder="your name" autocomplete="off" />
       <button id="joinBtn">Enter the Dungeon</button>
       <p class="hint">
-        Move: WASD / Arrows &nbsp;•&nbsp; Aim: mouse &nbsp;•&nbsp;
+        Move: WASD / Arrows &nbsp;•&nbsp; Look: mouse (click to capture) &nbsp;•&nbsp;
         Attack: Left click &nbsp;•&nbsp; Cast: Right click / Space &nbsp;•&nbsp;
-        Pick up: E &nbsp;•&nbsp; Inventory: click a slot to equip, Alt+click to drop
+        Pick up: E &nbsp;•&nbsp; Inventory: click a slot to equip, right-click to drop
       </p>
+      <p class="hint"><a id="dmLink" href="/dm.html">Open the DungeonMaster view instead →</a></p>
     </div>
   </div>
 
   <div id="hud" class="hidden">
+    <div id="lookHint" class="hidden"><span>Click to look around</span></div>
+    <div id="crosshair"></div>
+    <canvas id="minimap" width="160" height="160"></canvas>
+
     <div class="bars">
       <div class="bar hp"><div class="fill" id="hpFill"></div><span id="hpText">HP</span></div>
       <div class="bar mp"><div class="fill" id="mpFill"></div><span id="mpText">MP</span></div>

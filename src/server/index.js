@@ -80,8 +80,17 @@ wss.on('connection', (ws) => {
       return;
     }
 
+    if (msg.type === MSG.SPECTATE) {
+      if (player || ws.isSpectator) return;
+      ws.isSpectator = true;
+      ws.dmLevel = 0;
+      send(ws, { type: MSG.WELCOME, dm: true, ...game.dmWelcome(ws.dmLevel) });
+      console.log('[spectate] DungeonMaster view connected');
+      return;
+    }
+
     if (msg.type === MSG.JOIN) {
-      if (player) return;
+      if (player || ws.isSpectator) return;
       player = game.addPlayer(id, msg.name);
       ws.player = player;
       send(ws, { type: MSG.WELCOME, ...game.welcomeFor(player) });
@@ -107,6 +116,8 @@ wss.on('connection', (ws) => {
     if (player) {
       console.log(`[left] ${player.name} (${id})`);
       game.removePlayer(id);
+    } else if (ws.isSpectator) {
+      console.log('[spectate] DungeonMaster view disconnected');
     }
   });
 
@@ -130,6 +141,10 @@ setInterval(() => {
   game.tick(dt, now);
 
   for (const ws of wss.clients) {
+    if (ws.isSpectator) {
+      send(ws, { type: MSG.STATE, dm: true, ...game.dmSnapshot(ws.dmLevel) });
+      continue;
+    }
     if (!ws.player || !game.players.has(ws.player.id)) continue;
     send(ws, { type: MSG.STATE, ...game.snapshotFor(ws.player) });
   }

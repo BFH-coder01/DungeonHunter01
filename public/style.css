@@ -183,7 +183,7 @@ html, body {
 
 #log {
   position: absolute;
-  top: 14px;
+  bottom: 100px;
   right: 14px;
   width: 260px;
   display: flex;
@@ -200,3 +200,87 @@ html, body {
 }
 #log div.bad { border-color: var(--danger); color: var(--danger); }
 #log div.good { border-color: var(--warn); color: var(--warn); }
+
+/* --- DungeonMaster view --- */
+
+#dmHeader {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 14px 18px;
+  background: linear-gradient(rgba(4, 12, 8, 0.9), rgba(4, 12, 8, 0));
+  pointer-events: none;
+}
+#dmHeader .title {
+  font-size: 15px;
+  letter-spacing: 3px;
+  color: var(--warn);
+  text-shadow: 0 0 6px rgba(255, 207, 77, 0.5);
+}
+#dmHeader #dmInfo { font-size: 12px; color: var(--ink-dim); margin-top: 4px; }
+
+#dmRoster {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  text-align: right;
+}
+.rosterRow {
+  background: rgba(0, 0, 0, 0.5);
+  border-right: 2px solid var(--ink);
+  padding: 3px 8px;
+}
+.rosterRow.dead { color: var(--danger); opacity: 0.7; }
+
+/* --- first-person (participant) view --- */
+
+#lookHint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--ink);
+  font-size: 14px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  text-align: center;
+  pointer-events: auto;
+}
+#lookHint span {
+  border: 1px solid var(--ink-dim);
+  background: var(--panel);
+  padding: 14px 24px;
+}
+
+#minimap {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  border: 1px solid var(--ink-dim);
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+#crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  pointer-events: none;
+}
+#crosshair::before, #crosshair::after {
+  content: '';
+  position: absolute;
+  background: rgba(255, 255, 255, 0.65);
+}
+#crosshair::before { left: 6px; top: 0; width: 2px; height: 14px; }
+#crosshair::after { top: 6px; left: 0; width: 14px; height: 2px; }

@@ -26,6 +26,7 @@ export const MSG = {
   EVENT: 'event',
   // client -> server
   JOIN: 'join',
+  SPECTATE: 'spectate', // DungeonMaster view: observe, no character
   INPUT: 'input',
   ACTION: 'action',
 };

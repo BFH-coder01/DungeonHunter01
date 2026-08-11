@@ -471,6 +471,53 @@ export class Game {
     player.newlyExplored = [];
     return snapshot;
   }
+
+  // --- DungeonMaster / spectator ----------------------------------------
+  // The DM is an observer, not a combatant: no fog, no character, sees the
+  // whole level and every player on it regardless of the `revealAll` test flag.
+
+  dmWelcome(levelIndex = 0) {
+    const level = this.levels[levelIndex] ?? this.levels[0];
+    return {
+      seed: this.seed,
+      totalLevels: this.totalLevels,
+      level: levelIndex,
+      width: level.width,
+      height: level.height,
+      // sent once in full — the DM view never has fog to unfog
+      tiles: Array.from(level.tiles),
+    };
+  }
+
+  dmSnapshot(levelIndex = 0) {
+    const players = [];
+    for (const p of this.players.values()) {
+      if (p.level !== levelIndex) continue;
+      players.push({
+        id: p.id,
+        name: p.name,
+        x: round2(p.x),
+        y: round2(p.y),
+        aim: round2(p.aim),
+        alive: p.alive,
+        health: Math.round(p.health),
+        maxHealth: p.maxHealth,
+        kills: p.kills,
+        deaths: p.deaths,
+      });
+    }
+
+    const level = this.levels[levelIndex] ?? this.levels[0];
+    const caches = level.caches
+      .filter((c) => !c.looted)
+      .map((c) => ({ id: c.id, x: round2(c.x), y: round2(c.y) }));
+
+    const drops = this.groundItems.get(levelIndex).map((d) => ({
+      uid: d.uid, x: round2(d.x), y: round2(d.y), name: d.item.name, kind: d.item.kind,
+    }));
+
+    return { t: Date.now(), level: levelIndex, players, caches, drops };
+  }
 }
 
 function tileIndex(level, x, y) {

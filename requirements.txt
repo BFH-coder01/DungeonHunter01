@@ -1,0 +1,4 @@
+# DungeonHunter01 has no Python package dependencies.
+#
+# The application runtime is Node.js 20+. Install its locked dependencies with:
+#   npm ci

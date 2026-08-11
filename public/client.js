@@ -14,6 +14,7 @@ let drops = new Map();
 
 const canvas = document.getElementById('view');
 const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false; // crisp stretched texture columns, not blurry
 const minimapCanvas = document.getElementById('minimap');
 const mctx = minimapCanvas.getContext('2d');
 
@@ -289,12 +290,81 @@ function handleEvent(ev) {
 }
 
 // ---------------------------------------------------------------------
-// first-person wireframe raycaster
+// first-person raycaster — textured walls
 // ---------------------------------------------------------------------
 
 const FOV = 70 * Math.PI / 180;
-const RAYS = 240;
+const RAYS = 320;
 const MAX_DIST = SIGHT_RADIUS;
+
+// Procedurally-generated stone-block textures, drawn once to an offscreen
+// canvas. No image assets, no build step — and no licensing question, unlike
+// pulling real photos off a stock site. One tint per wall orientation bakes
+// the N/S-vs-E/W shading straight into the texture instead of an extra pass.
+function makeStoneTexture(size, tint) {
+  const tex = document.createElement('canvas');
+  tex.width = size;
+  tex.height = size;
+  const tctx = tex.getContext('2d');
+
+  tctx.fillStyle = `rgb(${tint.r},${tint.g},${tint.b})`;
+  tctx.fillRect(0, 0, size, size);
+
+  const courseH = size / 8;
+  const blockW = size / 5;
+
+  for (let row = 0, y = 0; y < size; y += courseH, row++) {
+    const offset = (row % 2) * (blockW / 2);
+    for (let x = -blockW; x < size + blockW; x += blockW) {
+      const bx = x + offset;
+      const shade = 0.72 + Math.random() * 0.4;
+      tctx.fillStyle = `rgb(${Math.min(255, tint.r * shade) | 0},${Math.min(255, tint.g * shade) | 0},${Math.min(255, tint.b * shade) | 0})`;
+      tctx.fillRect(bx, y, blockW - 2, courseH - 2);
+
+      if (Math.random() < 0.16) {
+        const mx = bx + blockW * (0.3 + Math.random() * 0.4);
+        const my = y + courseH * (0.3 + Math.random() * 0.4);
+        const r = courseH * (0.5 + Math.random() * 0.4);
+        const grad = tctx.createRadialGradient(mx, my, 0, mx, my, r);
+        grad.addColorStop(0, 'rgba(40,70,35,0.5)');
+        grad.addColorStop(1, 'rgba(40,70,35,0)');
+        tctx.fillStyle = grad;
+        tctx.fillRect(bx, y, blockW, courseH);
+      }
+    }
+  }
+
+  tctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  tctx.lineWidth = 2;
+  for (let y = 0; y <= size; y += courseH) {
+    tctx.beginPath();
+    tctx.moveTo(0, y);
+    tctx.lineTo(size, y);
+    tctx.stroke();
+  }
+  for (let row = 0, y = 0; y < size; y += courseH, row++) {
+    const offset = (row % 2) * (blockW / 2);
+    for (let x = -blockW; x < size + blockW; x += blockW) {
+      const bx = x + offset;
+      tctx.beginPath();
+      tctx.moveTo(bx, y);
+      tctx.lineTo(bx, y + courseH);
+      tctx.stroke();
+    }
+  }
+
+  for (let i = 0; i < size * 6; i++) {
+    tctx.fillStyle = `rgba(0,0,0,${(Math.random() * 0.25).toFixed(2)})`;
+    tctx.fillRect(Math.random() * size, Math.random() * size, 1, 1);
+  }
+
+  return tex;
+}
+
+const WALL_TEX = {
+  0: makeStoneTexture(256, { r: 60, g: 56, b: 50 }), // N/S faces
+  1: makeStoneTexture(256, { r: 36, g: 34, b: 30 }), // E/W faces, darker
+};
 
 let renderX = null, renderY = null;
 let lastFrameT = performance.now();
@@ -314,7 +384,9 @@ function tileBlocked(tx, ty) {
 }
 
 // Lode's DDA raycast: steps grid cells until a wall (or unexplored cell) is
-// hit, returning the perpendicular (non-fisheye) distance directly.
+// hit, returning the perpendicular (non-fisheye) distance directly, plus
+// wallX — the 0..1 fractional position along the hit face, used to pick a
+// texture column.
 function castRay(px, py, angle) {
   const dirX = Math.cos(angle), dirY = Math.sin(angle);
   let mapX = Math.floor(px), mapY = Math.floor(py);
@@ -332,15 +404,19 @@ function castRay(px, py, angle) {
     if (sideDistX < sideDistY) { sideDistX += deltaDistX; mapX += stepX; side = 0; }
     else { sideDistY += deltaDistY; mapY += stepY; side = 1; }
     if (mapX < 0 || mapY < 0 || mapX >= width || mapY >= height) {
-      return { dist: MAX_DIST, side, unknown: false };
+      return { dist: MAX_DIST, side, unknown: false, wallX: 0 };
     }
     const v = map[mapY * width + mapX];
     if (v === -1 || v === TILE.WALL) {
       const dist = side === 0 ? sideDistX - deltaDistX : sideDistY - deltaDistY;
-      return { dist: Math.min(dist, MAX_DIST), side, unknown: v === -1 };
+      const hitX = px + dist * dirX, hitY = py + dist * dirY;
+      let wallX = side === 0 ? hitY - Math.floor(hitY) : hitX - Math.floor(hitX);
+      if (side === 0 && dirX > 0) wallX = 1 - wallX;
+      if (side === 1 && dirY < 0) wallX = 1 - wallX;
+      return { dist: Math.min(dist, MAX_DIST), side, unknown: v === -1, wallX };
     }
   }
-  return { dist: MAX_DIST, side, unknown: false };
+  return { dist: MAX_DIST, side, unknown: false, wallX: 0 };
 }
 
 function clientHasLineOfSight(x0, y0, x1, y1) {
@@ -381,6 +457,7 @@ function drawScene() {
     ctx.stroke();
   }
 
+  const colW = w / RAYS;
   const columns = new Array(RAYS);
   for (let i = 0; i < RAYS; i++) {
     const t = i / (RAYS - 1);
@@ -388,32 +465,29 @@ function drawScene() {
     const res = castRay(renderX, renderY, rayAngle);
     const dist = Math.max(0.05, res.dist * Math.cos(rayAngle - viewAngle));
     const wallH = wallHeightAt(dist, h);
-    columns[i] = { x: t * w, top: horizon - wallH / 2, bot: horizon + wallH / 2, dist, side: res.side, unknown: res.unknown };
+    columns[i] = { x: t * w, top: horizon - wallH / 2, bot: horizon + wallH / 2, dist, side: res.side, unknown: res.unknown, wallX: res.wallX };
   }
 
-  // connective skyline top/bottom — the "wireframe mesh" read of the corridor
-  ctx.strokeStyle = 'rgba(53,255,138,0.5)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  columns.forEach((c, i) => (i === 0 ? ctx.moveTo(c.x, c.top) : ctx.lineTo(c.x, c.top)));
-  ctx.stroke();
-  ctx.beginPath();
-  columns.forEach((c, i) => (i === 0 ? ctx.moveTo(c.x, c.bot) : ctx.lineTo(c.x, c.bot)));
-  ctx.stroke();
-
-  // individual wall slices, spaced with visible gaps for a vector-scanline look
+  // texture-mapped wall slices, distance-fogged with a translucent overlay
   for (const c of columns) {
-    const fog = Math.max(0, 1 - c.dist / MAX_DIST);
-    const brightness = c.side === 0 ? 1 : 0.55;
-    const alpha = Math.max(0.05, fog * brightness);
-    ctx.strokeStyle = c.unknown
-      ? `rgba(255,207,77,${(alpha * 0.5).toFixed(3)})`
-      : `rgba(53,255,138,${alpha.toFixed(3)})`;
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.moveTo(c.x, c.top);
-    ctx.lineTo(c.x, c.bot);
-    ctx.stroke();
+    const fog = clamp(c.dist / MAX_DIST, 0, 1);
+    const sliceH = c.bot - c.top;
+
+    if (c.unknown) {
+      // edge of explored territory, not a real wall — flag it, don't texture it
+      ctx.fillStyle = `rgba(255,207,77,${(0.35 * (1 - fog)).toFixed(3)})`;
+      ctx.fillRect(c.x, c.top, colW + 1, sliceH);
+      continue;
+    }
+
+    const tex = WALL_TEX[c.side];
+    const sx = clamp(Math.floor(c.wallX * tex.width), 0, tex.width - 1);
+    ctx.drawImage(tex, sx, 0, 1, tex.height, c.x, c.top, colW + 1, sliceH);
+
+    if (fog > 0) {
+      ctx.fillStyle = `rgba(3,5,7,${(fog * 0.92).toFixed(3)})`;
+      ctx.fillRect(c.x, c.top, colW + 1, sliceH);
+    }
   }
 
   drawBillboards(horizon, floorScale, w, h);

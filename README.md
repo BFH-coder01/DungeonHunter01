@@ -90,11 +90,15 @@ The DungeonMaster view has no controls — it's a read-only overview. Just open
 - The server is authoritative for everything — position, combat, inventory.
   Clients only ever send movement intent (`mx`, `my`, view angle) and
   discrete actions (attack/cast/pickup/drop/equip); they never assert state.
-- The first-person renderer is a classic grid-DDA raycaster (Wolfenstein-style)
-  drawn as sparse, gapped vertical strokes rather than a filled render — a
-  deliberate "vector wireframe" look rather than a solid 3D fake-out. Distance
-  fog fades out at the dungeon's sight radius; N/S vs E/W wall faces are
-  shaded differently so corners and corridors stay legible.
+- The first-person renderer is a classic grid-DDA raycaster (Wolfenstein-style).
+  Walls are texture-mapped with procedurally-generated stone-block textures
+  (drawn once to an offscreen canvas at load — no image assets, no build
+  step) rather than real photos, partly to keep the zero-dependency
+  architecture and partly to sidestep licensing questions around using stock
+  photography as game assets. Distance fog fades to black at the dungeon's
+  sight radius; N/S vs E/W wall faces use different texture tints so corners
+  and corridors stay legible. The DungeonMaster view and the minimap stay
+  wireframe/schematic — only the Hunter's main view is textured.
 - The DungeonMaster connection is a distinct protocol path (`MSG.SPECTATE`)
   from joining as a player (`MSG.JOIN`) — a spectator never gets a character,
   never consumes a spawn point, and always sees the full level regardless of

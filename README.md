@@ -85,6 +85,38 @@ duplication to drift out of sync.
 The DungeonMaster view has no controls — it's a read-only overview. Just open
 `/dm.html` and watch.
 
+## Ambient sound
+
+The participant view has procedurally-synthesised ambient audio ([public/audio.js](public/audio.js))
+— everything is oscillators/noise/filters shaped with envelopes, no audio
+files, same zero-asset approach as the visuals. Voice chat/proximity mic
+audio was considered and deliberately **not** built — it needs HTTPS
+(`getUserMedia` requires a secure context, and a plain LAN IP doesn't
+qualify) for a payoff the group doesn't need, since everyone's expected to
+just talk out loud on the same wifi/in the same house.
+
+- **Drips** — anchored to ~9 fixed points scattered around the level, each
+  firing on its own random interval (~3–9s) and fading in/out with distance
+  via a Web Audio `PannerNode` (audible out to ~13 tiles).
+- **Distant ambience** — screams, growls, chain clanks, creaks, and wind
+  moans, picked at random so it doesn't read as the same two sounds on
+  loop. No fixed source: each time one fires, a virtual position is rolled
+  at a random direction and a distance biased heavily toward "far away"
+  (30–110 tiles, skewed toward the far end) — screams in particular almost
+  never land near the close end of that range, per spec.
+- **Whispers** — rare (every ~1–2.5 minutes), close, directional startles:
+  a short panned breath/hiss hard to one ear, followed by a whispered phrase
+  ("I see you", "behind you", "run", …) via the browser's built-in
+  text-to-speech (`SpeechSynthesisUtterance`, tuned quiet/slow/low-pitched).
+  **Caveat**: the Web Speech API has no way to route its output through the
+  Web Audio panning graph, so the spoken words themselves always play
+  centered/both ears — only the breath cue is genuinely panned left/right.
+  TTS voice/quality also varies by browser and OS; there's no control over
+  that from here.
+- The listener (camera) position/orientation is updated every frame from
+  the same `renderX`/`renderY`/`viewAngle` the renderer uses, so sound
+  direction matches what's on screen.
+
 ## Architecture notes
 
 - The server is authoritative for everything — position, combat, inventory.
@@ -122,6 +154,11 @@ The DungeonMaster view has no controls — it's a read-only overview. Just open
   with a mouse and keyboard.
 - No client-side position prediction/reconciliation, just smoothing (see
   above) — fine on a home LAN, may need revisiting under real latency.
+- Ambient audio was verified for correctness (scheduling rate, no console
+  errors, browser APIs present) but not for how it actually sounds — that
+  needs real ears, not something testable from here. Volume levels/mix
+  balance are a first pass, likely worth tuning once someone's actually
+  played with headphones on.
 
 ## Roadmap (post-v01)
 

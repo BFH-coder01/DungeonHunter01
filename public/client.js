@@ -1,4 +1,5 @@
 import { TILE, MSG, ACTION, SIGHT_RADIUS } from '/shared/constants.js';
+import { createAmbientAudio } from '/audio.js';
 
 // ---------------------------------------------------------------------
 // connection state
@@ -11,6 +12,9 @@ let self = null;
 let others = new Map();
 let caches = new Map();
 let drops = new Map();
+
+const audio = createAmbientAudio();
+let audioDungeonReady = false;
 
 const canvas = document.getElementById('view');
 const ctx = canvas.getContext('2d');
@@ -38,6 +42,7 @@ nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doJoin(); 
 joinBtn.addEventListener('click', doJoin);
 
 function doJoin() {
+  audio.start(); // must happen inside this click handler — browsers require a user gesture to unlock audio
   const name = nameInput.value.trim() || 'Hunter';
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}`);
@@ -71,6 +76,10 @@ function onWelcome(msg) {
 function onState(msg) {
   const rev = msg.reveal;
   for (let i = 0; i < rev.length; i += 2) map[rev[i]] = rev[i + 1];
+  if (!audioDungeonReady && rev.length) {
+    audioDungeonReady = true;
+    audio.setDungeon(width, height, map);
+  }
 
   self = msg.self;
   if (!viewAngleInit) { viewAngle = self.aim; viewAngleInit = true; }
@@ -787,6 +796,7 @@ function loop(now) {
   if (self) {
     drawScene();
     drawMinimap();
+    audio.updateListener(renderX, renderY, viewAngle);
   }
 
   requestAnimationFrame(loop);

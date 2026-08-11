@@ -301,7 +301,7 @@ const MAX_DIST = SIGHT_RADIUS;
 // canvas. No image assets, no build step — and no licensing question, unlike
 // pulling real photos off a stock site. One tint per wall orientation bakes
 // the N/S-vs-E/W shading straight into the texture instead of an extra pass.
-function makeStoneTexture(size, tint) {
+function makeStoneTexture(size, tint, courses = 8, blocksPerRow = 5) {
   const tex = document.createElement('canvas');
   tex.width = size;
   tex.height = size;
@@ -310,8 +310,8 @@ function makeStoneTexture(size, tint) {
   tctx.fillStyle = `rgb(${tint.r},${tint.g},${tint.b})`;
   tctx.fillRect(0, 0, size, size);
 
-  const courseH = size / 8;
-  const blockW = size / 5;
+  const courseH = size / courses;
+  const blockW = size / blocksPerRow;
 
   for (let row = 0, y = 0; y < size; y += courseH, row++) {
     const offset = (row % 2) * (blockW / 2);
@@ -365,6 +365,17 @@ const WALL_TEX = {
   0: makeStoneTexture(256, { r: 60, g: 56, b: 50 }), // N/S faces
   1: makeStoneTexture(256, { r: 36, g: 34, b: 30 }), // E/W faces, darker
 };
+
+// Floor/ceiling casting samples raw pixels directly (see drawFloorCeiling),
+// so it needs the texture's ImageData, not just a drawable canvas.
+function extractPixels(texCanvas) {
+  const tctx = texCanvas.getContext('2d');
+  return { data: tctx.getImageData(0, 0, texCanvas.width, texCanvas.height).data, size: texCanvas.width };
+}
+
+const FLOOR_TEX = extractPixels(makeStoneTexture(256, { r: 50, g: 44, b: 36 }, 5, 4)); // big flagstones
+const CEIL_TEX = extractPixels(makeStoneTexture(256, { r: 24, g: 23, b: 22 }, 9, 6)); // dark rough stone
+const FOG_BG = { r: 3, g: 5, b: 7 }; // matches the old flat ceiling/floor fill
 
 let renderX = null, renderY = null;
 let lastFrameT = performance.now();
@@ -435,27 +446,71 @@ function wallHeightAt(dist, h) {
   return Math.min(h * 4, (h * 0.9) / Math.max(0.05, dist));
 }
 
+// Floor/ceiling casting (Lode's tutorial technique): for each screen row,
+// every pixel in that row sits at the same world-space distance from the
+// player (true for a flat, non-rolled camera), so distance is computed once
+// per row and world position is stepped linearly across it. Sampled in 2x2
+// blocks — quarters the pixel work and reads as consistently "chunky" with
+// the wall columns, which are already rendered at reduced (RAYS) resolution
+// rather than full pixel width.
+let frameImage = null;
+
+function drawFloorCeiling(horizon) {
+  const w = canvas.width, h = canvas.height;
+  if (!frameImage || frameImage.width !== w || frameImage.height !== h) {
+    frameImage = ctx.createImageData(w, h);
+  }
+  const buf = frameImage.data;
+  const posZ = h * 0.45; // matches wallHeightAt's (h*0.9)/dist, halved
+
+  const a0 = viewAngle - FOV / 2, a1 = viewAngle + FOV / 2;
+  const dir0x = Math.cos(a0), dir0y = Math.sin(a0);
+  const dir1x = Math.cos(a1), dir1y = Math.sin(a1);
+
+  const STEP = 2;
+
+  for (let p = 0; p < h; p += STEP) {
+    const isCeil = p < horizon;
+    const vy = isCeil ? horizon - p : p - horizon;
+    if (vy < 1) continue; // right at the horizon — leave as the thin dark seam
+    const rowDist = posZ / vy;
+    const fog = clamp(rowDist / MAX_DIST, 0, 1) * 0.95;
+    const tex = isCeil ? CEIL_TEX : FLOOR_TEX;
+    const mask = tex.size - 1;
+
+    const stepX = (rowDist * (dir1x - dir0x) / w) * STEP;
+    const stepY = (rowDist * (dir1y - dir0y) / w) * STEP;
+    let fx = renderX + rowDist * dir0x;
+    let fy = renderY + rowDist * dir0y;
+
+    for (let x = 0; x < w; x += STEP) {
+      const tx = Math.floor(fx * tex.size) & mask;
+      const ty = Math.floor(fy * tex.size) & mask;
+      const si = (ty * tex.size + tx) * 4;
+      const r = tex.data[si] * (1 - fog) + FOG_BG.r * fog;
+      const g = tex.data[si + 1] * (1 - fog) + FOG_BG.g * fog;
+      const b = tex.data[si + 2] * (1 - fog) + FOG_BG.b * fog;
+
+      for (let by = 0; by < STEP && p + by < h; by++) {
+        let di = ((p + by) * w + x) * 4;
+        for (let bx = 0; bx < STEP && x + bx < w; bx++) {
+          buf[di] = r; buf[di + 1] = g; buf[di + 2] = b; buf[di + 3] = 255;
+          di += 4;
+        }
+      }
+      fx += stepX; fy += stepY;
+    }
+  }
+
+  ctx.putImageData(frameImage, 0, 0);
+}
+
 function drawScene() {
   const w = canvas.width, h = canvas.height;
   const horizon = h / 2;
-  const floorScale = h * 0.62;
+  const floorScale = h * 0.45; // matches drawFloorCeiling's posZ so billboards sit on the actual floor
 
-  ctx.fillStyle = '#030507';
-  ctx.fillRect(0, 0, w, horizon);
-  ctx.fillStyle = '#050a06';
-  ctx.fillRect(0, horizon, w, h - horizon);
-
-  // floor perspective bands — cheap depth cue, not per-tile accurate
-  for (const d of [1, 1.5, 2, 3, 4, 6, MAX_DIST]) {
-    const y = horizon + floorScale / d;
-    if (y > h) continue;
-    const alpha = Math.max(0.04, (1 - d / MAX_DIST) * 0.35);
-    ctx.strokeStyle = `rgba(20,97,47,${alpha.toFixed(3)})`;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-    ctx.stroke();
-  }
+  drawFloorCeiling(horizon);
 
   const colW = w / RAYS;
   const columns = new Array(RAYS);

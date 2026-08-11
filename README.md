@@ -91,14 +91,21 @@ The DungeonMaster view has no controls — it's a read-only overview. Just open
   Clients only ever send movement intent (`mx`, `my`, view angle) and
   discrete actions (attack/cast/pickup/drop/equip); they never assert state.
 - The first-person renderer is a classic grid-DDA raycaster (Wolfenstein-style).
-  Walls are texture-mapped with procedurally-generated stone-block textures
-  (drawn once to an offscreen canvas at load — no image assets, no build
-  step) rather than real photos, partly to keep the zero-dependency
-  architecture and partly to sidestep licensing questions around using stock
-  photography as game assets. Distance fog fades to black at the dungeon's
-  sight radius; N/S vs E/W wall faces use different texture tints so corners
-  and corridors stay legible. The DungeonMaster view and the minimap stay
-  wireframe/schematic — only the Hunter's main view is textured.
+  Walls, floor and ceiling are all texture-mapped with procedurally-generated
+  stone textures (drawn once to an offscreen canvas at load — no image
+  assets, no build step) rather than real photos, partly to keep the
+  zero-dependency architecture and partly to sidestep licensing questions
+  around using stock photography or 3D-model-site assets as game content.
+  Walls are drawn per-column via `drawImage` (`RAYS` columns, not full pixel
+  width — deliberately chunky/retro and cheap); floor/ceiling use true
+  per-pixel row casting into an `ImageData` buffer (Lode's tutorial
+  technique — distance is constant across a screen row for a flat, unrolled
+  camera, so it's computed once per row and stepped linearly), sampled in 2x2
+  blocks to keep the per-frame cost down. Distance fog fades everything
+  toward the same near-black tone at the dungeon's sight radius; N/S vs E/W
+  wall faces use different texture tints so corners and corridors stay
+  legible. The DungeonMaster view and the minimap stay wireframe/schematic —
+  only the Hunter's main view is textured.
 - The DungeonMaster connection is a distinct protocol path (`MSG.SPECTATE`)
   from joining as a player (`MSG.JOIN`) — a spectator never gets a character,
   never consumes a spawn point, and always sees the full level regardless of

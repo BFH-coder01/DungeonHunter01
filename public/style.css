@@ -239,26 +239,6 @@ html, body {
 
 /* --- first-person (participant) view --- */
 
-#lookHint {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.35);
-  color: var(--ink);
-  font-size: 14px;
-  letter-spacing: 1px;
-  cursor: pointer;
-  text-align: center;
-  pointer-events: auto;
-}
-#lookHint span {
-  border: 1px solid var(--ink-dim);
-  background: var(--panel);
-  padding: 14px 24px;
-}
-
 #minimap {
   position: absolute;
   top: 14px;

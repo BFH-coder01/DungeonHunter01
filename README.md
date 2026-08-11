@@ -69,9 +69,12 @@ duplication to drift out of sync.
 
 - Forward/back: W/S or ↑/↓
 - Strafe left/right: A/D
-- Turn: mouse only (click the view to capture the pointer; Esc releases it).
-  Turning is deliberately not on the keyboard — a keyboard snap-turn used to
-  yank your facing (and therefore "forward") into a wall mid-corridor.
+- Turn: mouse-look (click the view to capture the pointer; Esc releases it)
+  where the browser/environment supports pointer lock, or hold ←/→ for a
+  smooth continuous turn otherwise. An earlier version used a discrete
+  keyboard snap-turn, which yanked your facing (and therefore "forward")
+  straight into a wall mid-corridor — holding to turn gradually doesn't have
+  that problem.
 - Attack (equipped weapon): left click
 - Cast (equipped spell): right click / space
 - Open a cache / pick up a floor item: E or O. Caches can be opened from

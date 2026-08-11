@@ -32,7 +32,6 @@ const joinOverlay = document.getElementById('join');
 const hud = document.getElementById('hud');
 const nameInput = document.getElementById('nameInput');
 const joinBtn = document.getElementById('joinBtn');
-const lookHint = document.getElementById('lookHint');
 
 nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doJoin(); });
 joinBtn.addEventListener('click', doJoin);
@@ -64,7 +63,6 @@ function onWelcome(msg) {
   map = new Int8Array(width * height).fill(-1);
   joinOverlay.classList.add('hidden');
   hud.classList.remove('hidden');
-  lookHint.classList.remove('hidden');
   log(`Dungeon seed ${msg.seed} — level ${msg.level + 1}/${msg.totalLevels}${msg.revealAll ? ' (full map test mode)' : ''}`, 'good');
   requestAnimationFrame(loop);
 }
@@ -92,18 +90,29 @@ function onState(msg) {
 const MOUSE_SENS = 0.0022;
 let viewAngle = 0;
 let locked = false;
+let pointerLockTried = false;
 
 canvas.addEventListener('mousedown', (e) => {
-  if (!locked) { canvas.requestPointerLock(); return; }
+  if (!locked) {
+    pointerLockTried = true;
+    canvas.requestPointerLock();
+    return;
+  }
   if (e.button === 0) sendAction(ACTION.ATTACK);
   if (e.button === 2) sendAction(ACTION.CAST);
 });
-lookHint.addEventListener('click', () => canvas.requestPointerLock());
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === canvas;
-  lookHint.classList.toggle('hidden', locked);
+});
+
+// Pointer lock isn't available in every embedding context (some in-app
+// browser panes block it). If it fails, fall back silently to arrow-key
+// turning below rather than leaving mouse-look looking broken.
+document.addEventListener('pointerlockerror', () => {
+  if (pointerLockTried) log('Mouse-look is not available here — hold left/right arrow to turn.', 'bad');
+  pointerLockTried = false;
 });
 
 document.addEventListener('mousemove', (e) => {
@@ -117,9 +126,17 @@ function normalizeAngle(a) {
   return a;
 }
 
-// Turning is mouse-only now — a discrete keyboard snap-turn mid-corridor was
-// yanking the view (and therefore "forward") into a wall. Arrow up/down are
-// forward/back, A/D are strafe; nothing on the keyboard changes view angle.
+// Arrow left/right turn the view continuously while held (not a snap-turn —
+// a discrete jump mid-corridor used to yank "forward" straight into a wall).
+// This works whether or not the mouse-look pointer lock is available.
+const KEY_TURN_RATE = Math.PI * 0.8; // ~144°/sec
+function applyKeyTurn(dt) {
+  let turn = 0;
+  if (keys.has('arrowleft')) turn -= 1;
+  if (keys.has('arrowright')) turn += 1;
+  if (turn !== 0) viewAngle = normalizeAngle(viewAngle + turn * KEY_TURN_RATE * dt);
+}
+
 const keys = new Set();
 window.addEventListener('keydown', (e) => {
   if (document.activeElement === nameInput) return;
@@ -459,17 +476,29 @@ function drawPlayerGlyph(o, sx, feetY, fullH, dist) {
   ctx.fillText(`${o.name} ${o.hp}%`, sx, topY - 6);
 }
 
+// A wireframe box (front face + offset back face + connecting edges) reads
+// as an actual 3D chest; a single rect plus a seam line just looked like two
+// flat rectangles stacked on top of each other.
 function drawCacheGlyph(sx, feetY, fullH) {
-  const h = clamp(fullH * 0.26, 7, canvas.height * 0.45);
-  const pulse = 1 + Math.sin(performance.now() / 400) * 0.06;
-  const rh = h * pulse, rw = rh * 1.3;
-  const top = feetY - rh;
+  const rh = clamp(fullH * 0.26, 7, canvas.height * 0.45) * (1 + Math.sin(performance.now() / 400) * 0.06);
+  const rw = rh * 1.25;
+  const depth = rw * 0.34;
+  const bx = depth * 0.75, by = -depth * 0.55; // back face recedes up-and-right
+
+  const left = sx - rw / 2, right = sx + rw / 2;
+  const top = feetY - rh, bottom = feetY;
+
   ctx.strokeStyle = '#ffcf4d';
-  ctx.lineWidth = clamp(rh * 0.08, 1, 3);
-  ctx.strokeRect(sx - rw / 2, top, rw, rh);
+  ctx.lineWidth = clamp(rh * 0.07, 1, 3);
+
+  ctx.strokeRect(left, top, rw, rh); // front face
+  ctx.strokeRect(left + bx, top + by, rw, rh); // back face
+
   ctx.beginPath();
-  ctx.moveTo(sx - rw / 2, top + rh * 0.4);
-  ctx.lineTo(sx + rw / 2, top + rh * 0.4);
+  ctx.moveTo(left, top); ctx.lineTo(left + bx, top + by);
+  ctx.moveTo(right, top); ctx.lineTo(right + bx, top + by);
+  ctx.moveTo(left, bottom); ctx.lineTo(left + bx, bottom + by);
+  ctx.moveTo(right, bottom); ctx.lineTo(right + bx, bottom + by);
   ctx.stroke();
 }
 
@@ -538,6 +567,7 @@ function loop(now) {
   const dt = Math.min(0.1, (now - lastFrameT) / 1000);
   lastFrameT = now;
 
+  applyKeyTurn(dt);
   pumpInput(now);
   updateSmoothing(dt);
 

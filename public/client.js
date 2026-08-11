@@ -117,12 +117,20 @@ function normalizeAngle(a) {
   return a;
 }
 
+// Arrow left/right are a discrete snap-turn (1/8 of a full circle per press),
+// not a strafe — mirrors classic dungeon-crawler turning. Mouse-look and A/D
+// strafing are unaffected. e.repeat is ignored so holding the key doesn't
+// spin continuously; release and press again for the next 45°.
+const TURN_STEP = Math.PI / 4;
+
 const keys = new Set();
 window.addEventListener('keydown', (e) => {
   if (document.activeElement === nameInput) return;
   keys.add(e.key.toLowerCase());
   if (e.key === 'e' || e.key === 'E') sendAction(ACTION.PICKUP);
   if (e.key === ' ') { sendAction(ACTION.CAST); e.preventDefault(); }
+  if (e.key === 'ArrowLeft' && !e.repeat) { viewAngle = normalizeAngle(viewAngle - TURN_STEP); e.preventDefault(); }
+  if (e.key === 'ArrowRight' && !e.repeat) { viewAngle = normalizeAngle(viewAngle + TURN_STEP); e.preventDefault(); }
   const n = Number(e.key);
   if (n >= 1 && n <= 8) equipSlot(n - 1);
 });
@@ -142,8 +150,8 @@ function pumpInput(now) {
   let fb = 0, lr = 0;
   if (keys.has('w') || keys.has('arrowup')) fb += 1;
   if (keys.has('s') || keys.has('arrowdown')) fb -= 1;
-  if (keys.has('d') || keys.has('arrowright')) lr += 1;
-  if (keys.has('a') || keys.has('arrowleft')) lr -= 1;
+  if (keys.has('d')) lr += 1;
+  if (keys.has('a')) lr -= 1;
 
   let mx = 0, my = 0;
   if (fb !== 0 || lr !== 0) {

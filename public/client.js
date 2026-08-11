@@ -634,15 +634,36 @@ function drawCacheGlyph(sx, feetY, fullH) {
   ctx.fillStyle = aura;
   ctx.fillRect(sx - auraR, gemY - auraR, auraR * 2, auraR * 2);
 
-  ctx.strokeStyle = '#ffcf4d';
-  ctx.lineWidth = clamp(rh * 0.07, 1, 3);
-  ctx.strokeRect(left, top, rw, rh); // front face
-  ctx.strokeRect(left + bx, top + by, rw, rh); // back face
+  // solid wood chest body: front + oblique top/side faces, shaded as if lit
+  // from above (top lighter, side in shadow) so the fill still reads as 3D
+  // instead of a flat rectangle. Only the 9 edges actually visible from this
+  // angle get drawn — the old version stroked the full hidden back face too,
+  // which was fine as a see-through cage but wrong once solid.
+  ctx.fillStyle = '#3a2614';
+  ctx.fillRect(left, top, rw, rh); // front
+
+  ctx.fillStyle = '#5a3c1c';
   ctx.beginPath();
   ctx.moveTo(left, top); ctx.lineTo(left + bx, top + by);
+  ctx.lineTo(right + bx, top + by); ctx.lineTo(right, top);
+  ctx.closePath();
+  ctx.fill(); // top
+
+  ctx.fillStyle = '#241608';
+  ctx.beginPath();
   ctx.moveTo(right, top); ctx.lineTo(right + bx, top + by);
-  ctx.moveTo(left, bottom); ctx.lineTo(left + bx, bottom + by);
-  ctx.moveTo(right, bottom); ctx.lineTo(right + bx, bottom + by);
+  ctx.lineTo(right + bx, bottom + by); ctx.lineTo(right, bottom);
+  ctx.closePath();
+  ctx.fill(); // side (shadow)
+
+  ctx.strokeStyle = '#ffcf4d';
+  ctx.lineWidth = clamp(rh * 0.06, 1, 3);
+  ctx.strokeRect(left, top, rw, rh);
+  ctx.beginPath();
+  ctx.moveTo(left, top); ctx.lineTo(left + bx, top + by);
+  ctx.lineTo(right + bx, top + by); ctx.lineTo(right, top);
+  ctx.moveTo(right, top); ctx.lineTo(right + bx, top + by);
+  ctx.lineTo(right + bx, bottom + by); ctx.lineTo(right, bottom);
   ctx.stroke();
 
   // iron banding straps across the front face

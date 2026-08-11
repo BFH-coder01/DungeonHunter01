@@ -87,35 +87,36 @@ The DungeonMaster view has no controls — it's a read-only overview. Just open
 
 ## Ambient sound
 
-The participant view has procedurally-synthesised ambient audio ([public/audio.js](public/audio.js))
-— everything is oscillators/noise/filters shaped with envelopes, no audio
-files, same zero-asset approach as the visuals. Voice chat/proximity mic
-audio was considered and deliberately **not** built — it needs HTTPS
-(`getUserMedia` requires a secure context, and a plain LAN IP doesn't
-qualify) for a payoff the group doesn't need, since everyone's expected to
-just talk out loud on the same wifi/in the same house.
+The participant view has footstep audio ([public/audio.js](public/audio.js),
+`public/sfx/footsteps.wav`). Voice chat/proximity mic audio was considered
+and deliberately **not** built — it needs HTTPS (`getUserMedia` requires a
+secure context, and a plain LAN IP doesn't qualify) for a payoff the group
+doesn't need, since everyone's expected to just talk out loud on the same
+wifi/in the same house.
 
-- **Drips** — anchored to ~9 fixed points scattered around the level, each
-  firing on its own random interval (~3–9s) and fading in/out with distance
-  via a Web Audio `PannerNode` (audible out to ~13 tiles).
-- **Distant ambience** — screams, growls, chain clanks, creaks, and wind
-  moans, picked at random so it doesn't read as the same two sounds on
-  loop. No fixed source: each time one fires, a virtual position is rolled
-  at a random direction and a distance biased heavily toward "far away"
-  (30–110 tiles, skewed toward the far end) — screams in particular almost
-  never land near the close end of that range, per spec.
-- **Whispers** — rare (every ~1–2.5 minutes), close, directional startles:
-  a short panned breath/hiss hard to one ear, followed by a whispered phrase
-  ("I see you", "behind you", "run", …) via the browser's built-in
-  text-to-speech (`SpeechSynthesisUtterance`, tuned quiet/slow/low-pitched).
-  **Caveat**: the Web Speech API has no way to route its output through the
-  Web Audio panning graph, so the spoken words themselves always play
-  centered/both ears — only the breath cue is genuinely panned left/right.
-  TTS voice/quality also varies by browser and OS; there's no control over
-  that from here.
+`footsteps.wav` is a real (user-supplied) audio file, not a procedural one.
+Two earlier passes tried generating ambience (drips, screams, growls, chain
+clanks, creaks, wind, whispered voice lines) procedurally — first live via
+Web Audio oscillators, then offline-rendered with layered/detuned
+oscillators and hand-rolled biquad filters for more headroom — and both
+were dropped as too harsh/artificial to keep. That's a real, known ceiling
+on hand-synthesised sound design without actual recordings, not something
+more tuning was going to fix. If ambience beyond footsteps comes back,
+expect it to be real audio files too, same as this one.
+
+- The file is a ~36s continuous walking sequence, not a single step hit, so
+  it's used as a loopable "walking" bed rather than triggered per-stride:
+  looped for as long as a player is moving, faded out (not cut) when they
+  stop.
+- **Self** plays centered, quiet (immersion). **Other players** are
+  positioned via a Web Audio `PannerNode` at their live position — audible
+  out to ~16 tiles — so you can hear someone nearby before you see them.
+  "Moving" for other players is inferred from snapshot-to-snapshot position
+  deltas (their input state isn't known to us, only their position); for
+  yourself it's read directly from held movement keys.
 - The listener (camera) position/orientation is updated every frame from
-  the same `renderX`/`renderY`/`viewAngle` the renderer uses, so sound
-  direction matches what's on screen.
+  the same `renderX`/`renderY`/`viewAngle` the renderer uses, so direction
+  matches what's on screen.
 
 ## Architecture notes
 
@@ -154,11 +155,15 @@ just talk out loud on the same wifi/in the same house.
   with a mouse and keyboard.
 - No client-side position prediction/reconciliation, just smoothing (see
   above) — fine on a home LAN, may need revisiting under real latency.
-- Ambient audio was verified for correctness (scheduling rate, no console
-  errors, browser APIs present) but not for how it actually sounds — that
-  needs real ears, not something testable from here. Volume levels/mix
-  balance are a first pass, likely worth tuning once someone's actually
-  played with headphones on.
+- Footstep audio was verified for correctness (file loads/decodes, loop
+  starts on movement and fades out on stop, no console errors) but not for
+  how it actually sounds — that needs real ears, not something testable
+  from here. Volume levels (self vs. others, distance falloff) are a first
+  pass, likely worth tuning once someone's actually played with headphones
+  on.
+- `public/sfx/footsteps.wav` was supplied by the user, not generated —
+  worth knowing if this project is ever shared or open-sourced, since its
+  actual copyright/license status wasn't verified here.
 
 ## Roadmap (post-v01)
 

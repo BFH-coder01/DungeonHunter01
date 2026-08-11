@@ -14,7 +14,7 @@ let caches = new Map();
 let drops = new Map();
 
 const audio = createAmbientAudio();
-let audioDungeonReady = false;
+const prevOthersPos = new Map(); // player id -> {x,y}, used to detect movement for footstep audio
 
 const canvas = document.getElementById('view');
 const ctx = canvas.getContext('2d');
@@ -76,10 +76,6 @@ function onWelcome(msg) {
 function onState(msg) {
   const rev = msg.reveal;
   for (let i = 0; i < rev.length; i += 2) map[rev[i]] = rev[i + 1];
-  if (!audioDungeonReady && rev.length) {
-    audioDungeonReady = true;
-    audio.setDungeon(width, height, map);
-  }
 
   self = msg.self;
   if (!viewAngleInit) { viewAngle = self.aim; viewAngleInit = true; }
@@ -88,9 +84,30 @@ function onState(msg) {
   caches = new Map(msg.caches.map((c) => [c.id, c]));
   drops = new Map(msg.drops.map((d) => [d.uid, d]));
 
+  updateOtherFootsteps(msg.others);
+
   for (const ev of msg.events) handleEvent(ev);
 
   updateHud();
+}
+
+// Footstep audio for other players is driven by snapshot-to-snapshot
+// movement, not input state (we don't know their keys, only their
+// position) — anything that moved more than float jitter since the last
+// snapshot counts as "walking".
+function updateOtherFootsteps(list) {
+  const presentIds = new Set();
+  for (const o of list) {
+    presentIds.add(o.id);
+    const prev = prevOthersPos.get(o.id);
+    const moved = !prev || Math.hypot(o.x - prev.x, o.y - prev.y) > 0.02;
+    audio.setMoving(o.id, moved, o.x, o.y, false);
+    prevOthersPos.set(o.id, { x: o.x, y: o.y });
+  }
+  for (const id of Array.from(prevOthersPos.keys())) {
+    if (!presentIds.has(id)) prevOthersPos.delete(id);
+  }
+  audio.clearMissing(presentIds);
 }
 
 // ---------------------------------------------------------------------
@@ -797,6 +814,11 @@ function loop(now) {
     drawScene();
     drawMinimap();
     audio.updateListener(renderX, renderY, viewAngle);
+    const selfMoving = self.alive && (
+      keys.has('w') || keys.has('s') || keys.has('a') || keys.has('d') ||
+      keys.has('arrowup') || keys.has('arrowdown')
+    );
+    audio.setMoving('self', selfMoving, renderX, renderY, true);
   }
 
   requestAnimationFrame(loop);

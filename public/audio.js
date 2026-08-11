@@ -1,21 +1,27 @@
-// Footstep audio. Procedurally-synthesised ambience (drips/screams/growls/
-// whispers) was tried first — both live-oscillator and offline-rendered —
-// and dropped: it sounded harsh/artificial either way, a well-known limit
-// of hand-rolled DSP without real recordings. This plays back a real audio
-// file instead (public/sfx/footsteps.wav, user-supplied — a ~36s walking
-// loop, not a single step hit), looped for the duration a player is moving
-// and faded out when they stop, positioned spatially for other players so
-// you can hear someone approaching.
+// Footstep audio + fixed ambient sound points, both using real audio files
+// (public/sfx/*.wav, user-supplied). Procedurally-synthesised ambience was
+// tried first — live oscillators, then an offline-rendered version with
+// layered oscillators and hand-rolled biquad filters — and dropped both
+// times as too harsh/artificial, a real ceiling on hand-synthesised sound
+// design without actual recordings.
+
+import { AMBIENT_GAIN, AMBIENT_MAX_DIST, AMBIENT_REF_DIST, AMBIENT_SOUNDS } from '/shared/sounds.js';
 
 const FOOTSTEP_MAX_DIST = 16; // tiles — footsteps are a subtle, local cue
 const FOOTSTEP_REF_DIST = 1.5;
 const FADE_SEC = 0.18;
 
+const SOUND_BY_ID = new Map(AMBIENT_SOUNDS.map((sound) => [sound.id, sound]));
+
 export function createAmbientAudio() {
   let ctx = null;
   let masterGain = null;
+  let ambientGain = null;
   let footstepsBuffer = null;
+  const ambientBuffers = new Map(); // sound id -> AudioBuffer
   const activeLoops = new Map(); // key ('self' or player id) -> { source, gain, panner }
+  const queuedPoints = new Map(); // server points received before installation
+  const installedPointIds = new Set();
 
   function ensureContext() {
     if (ctx) return;
@@ -23,25 +29,38 @@ export function createAmbientAudio() {
     masterGain = ctx.createGain();
     masterGain.gain.value = 0.8;
     masterGain.connect(ctx.destination);
-    fetch('/sfx/footsteps.wav')
-      .then((res) => res.arrayBuffer())
-      .then((arr) => ctx.decodeAudioData(arr))
-      .then((buf) => { footstepsBuffer = buf; })
-      .catch((err) => console.warn('[audio] failed to load footsteps.wav', err));
+    ambientGain = ctx.createGain();
+    ambientGain.gain.value = AMBIENT_GAIN;
+    ambientGain.connect(masterGain);
+
+    loadBuffer('/sfx/footsteps.wav').then((buf) => { footstepsBuffer = buf; });
+    for (const sound of AMBIENT_SOUNDS) {
+      loadBuffer(sound.url).then((buf) => {
+        if (buf) ambientBuffers.set(sound.id, buf);
+      });
+    }
   }
 
-  function makePanner(x, y) {
+  function loadBuffer(url) {
+    return fetch(url)
+      .then((res) => res.arrayBuffer())
+      .then((arr) => ctx.decodeAudioData(arr))
+      .catch((err) => { console.warn('[audio] failed to load', url, err); return null; });
+  }
+
+  function makePanner(x, y, maxDist, refDist, output = masterGain) {
     const p = ctx.createPanner();
     p.panningModel = 'equalpower';
     p.distanceModel = 'linear';
-    p.refDistance = FOOTSTEP_REF_DIST;
-    p.maxDistance = FOOTSTEP_MAX_DIST;
+    p.refDistance = refDist;
+    p.maxDistance = maxDist;
     p.rolloffFactor = 1;
     if (p.positionX) {
       p.positionX.value = x; p.positionY.value = 0; p.positionZ.value = y;
     } else {
       p.setPosition(x, 0, y);
     }
+    p.connect(output);
     return p;
   }
 
@@ -49,6 +68,8 @@ export function createAmbientAudio() {
     if (panner.positionX) { panner.positionX.value = x; panner.positionZ.value = y; }
     else panner.setPosition(x, 0, y);
   }
+
+  // --- footsteps (unchanged behaviour) -----------------------------------
 
   function startLoop(key, x, y, isSelf) {
     const src = ctx.createBufferSource();
@@ -66,10 +87,9 @@ export function createAmbientAudio() {
       src.connect(gain);
       gain.connect(masterGain);
     } else {
-      panner = makePanner(x, y);
+      panner = makePanner(x, y, FOOTSTEP_MAX_DIST, FOOTSTEP_REF_DIST);
       src.connect(gain);
       gain.connect(panner);
-      panner.connect(masterGain);
     }
     src.start();
     activeLoops.set(key, { source: src, gain, panner });
@@ -87,6 +107,52 @@ export function createAmbientAudio() {
     setTimeout(() => { try { source.stop(); } catch { /* already stopped */ } }, (FADE_SEC + 0.05) * 1000);
   }
 
+  // --- ambient points -----------------------------------------------------
+  // Locations and clip assignments are generated once by the server. The
+  // browser only schedules playback and applies listener-relative panning and
+  // linear distance attenuation.
+  function playAmbient(soundId, panner) {
+    const buf = ambientBuffers.get(soundId);
+    if (!buf) return;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = 0.97 + Math.random() * 0.06;
+    src.connect(panner);
+    src.start();
+  }
+
+  function scheduleClip(sound, panner) {
+    const minMs = Math.max(12000, sound.dur * 1400);
+    const maxMs = minMs + Math.max(20000, sound.dur * 2000);
+    const fire = () => {
+      playAmbient(sound.id, panner);
+      setTimeout(fire, minMs + Math.random() * (maxMs - minMs));
+    };
+    setTimeout(fire, Math.random() * maxMs);
+  }
+
+  function installQueuedPoints() {
+    if (!ctx) return;
+    for (const point of queuedPoints.values()) {
+      if (installedPointIds.has(point.id)) continue;
+      installedPointIds.add(point.id);
+      if (point.mode === 'group') {
+        const panner = makePanner(point.x, point.y, AMBIENT_MAX_DIST, AMBIENT_REF_DIST, ambientGain);
+        for (const clip of point.clips) {
+          const sound = SOUND_BY_ID.get(clip.soundId);
+          if (sound) scheduleClip(sound, panner);
+        }
+      } else {
+        for (const clip of point.clips) {
+          const sound = SOUND_BY_ID.get(clip.soundId);
+          if (!sound) continue;
+          const panner = makePanner(clip.x, clip.y, AMBIENT_MAX_DIST, AMBIENT_REF_DIST, ambientGain);
+          scheduleClip(sound, panner);
+        }
+      }
+    }
+  }
+
   return {
     // Must be called from inside a user-gesture handler (e.g. the join
     // button's click) — browsers won't let an AudioContext produce sound
@@ -94,6 +160,13 @@ export function createAmbientAudio() {
     start() {
       ensureContext();
       if (ctx.state === 'suspended') ctx.resume();
+      installQueuedPoints();
+    },
+    // Adds authoritative server-generated sources as the player comes within
+    // audible range. Points are installed once and retain their fixed panners.
+    setSoundPoints(points) {
+      for (const point of points) queuedPoints.set(point.id, point);
+      installQueuedPoints();
     },
     // Call every frame/update for 'self' and for each currently-visible
     // other player. Starts/stops/repositions their footstep loop as needed.

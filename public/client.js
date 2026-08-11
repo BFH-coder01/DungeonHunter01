@@ -76,6 +76,7 @@ function onWelcome(msg) {
 function onState(msg) {
   const rev = msg.reveal;
   for (let i = 0; i < rev.length; i += 2) map[rev[i]] = rev[i + 1];
+  audio.setSoundPoints(msg.soundPoints || []);
 
   self = msg.self;
   if (!viewAngleInit) { viewAngle = self.aim; viewAngleInit = true; }
@@ -100,7 +101,7 @@ function updateOtherFootsteps(list) {
   for (const o of list) {
     presentIds.add(o.id);
     const prev = prevOthersPos.get(o.id);
-    const moved = !prev || Math.hypot(o.x - prev.x, o.y - prev.y) > 0.02;
+    const moved = o.alive && prev && Math.hypot(o.x - prev.x, o.y - prev.y) > 0.02;
     audio.setMoving(o.id, moved, o.x, o.y, false);
     prevOthersPos.set(o.id, { x: o.x, y: o.y });
   }
@@ -610,25 +611,101 @@ function drawBillboards(horizon, floorScale, w, h) {
 
 function drawPlayerGlyph(o, sx, feetY, fullH, dist) {
   const fog = Math.max(0.12, 1 - dist / MAX_DIST);
-  const bodyH = clamp(fullH * 0.62, 10, canvas.height * 1.6);
-  const bodyW = bodyH * 0.4;
-  const headR = bodyW * 0.5;
-  const color = `rgba(53,255,138,${fog.toFixed(3)})`;
+  const bodyH = clamp(fullH * 0.68, 12, canvas.height * 1.6);
+  const bodyW = bodyH * 0.42;
   const topY = feetY - bodyH;
+  const lineW = clamp(bodyW * 0.055, 1, 3.5);
 
-  ctx.strokeStyle = color;
-  ctx.lineWidth = clamp(bodyW * 0.06, 1, 3);
+  ctx.save();
+  ctx.globalAlpha = fog;
+
+  if (!o.alive) {
+    const corpseH = bodyH * 0.18;
+    const corpseW = bodyH * 0.72;
+    const cy = feetY - corpseH * 0.45;
+
+    // Fallen cloak and collapsed hood.
+    ctx.fillStyle = '#07100b';
+    ctx.strokeStyle = '#ff5a68';
+    ctx.lineWidth = lineW;
+    ctx.beginPath();
+    ctx.moveTo(sx - corpseW * 0.5, cy);
+    ctx.quadraticCurveTo(sx - corpseW * 0.15, cy - corpseH, sx + corpseW * 0.42, cy - corpseH * 0.35);
+    ctx.lineTo(sx + corpseW * 0.5, cy + corpseH * 0.25);
+    ctx.quadraticCurveTo(sx, cy + corpseH * 0.5, sx - corpseW * 0.5, cy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(sx - corpseW * 0.34, cy - corpseH * 0.18, corpseH * 0.48, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.globalAlpha = Math.max(0.45, fog);
+    ctx.fillStyle = '#ff7a86';
+    ctx.font = `${clamp(bodyH * 0.1, 10, 18)}px Courier New, monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(o.name, sx, cy - corpseH * 1.25);
+    ctx.restore();
+    return;
+  }
+
+  const shoulderY = topY + bodyH * 0.34;
+  const hoodBottomY = topY + bodyH * 0.39;
+
+  // Deep cloak: a solid silhouette makes the figure readable against the
+  // textured dungeon while the bright edge preserves the wireframe style.
+  const cloak = ctx.createLinearGradient(sx, shoulderY, sx, feetY);
+  cloak.addColorStop(0, '#10251a');
+  cloak.addColorStop(1, '#030706');
+  ctx.fillStyle = cloak;
+  ctx.strokeStyle = '#35ff8a';
+  ctx.lineWidth = lineW;
   ctx.beginPath();
-  ctx.moveTo(sx - bodyW / 2, feetY);
-  ctx.lineTo(sx - bodyW / 2, topY + headR);
-  ctx.arc(sx, topY + headR, headR, Math.PI, 0);
-  ctx.lineTo(sx + bodyW / 2, feetY);
+  ctx.moveTo(sx - bodyW * 0.33, shoulderY);
+  ctx.quadraticCurveTo(sx - bodyW * 0.5, topY + bodyH * 0.62, sx - bodyW * 0.55, feetY);
+  ctx.lineTo(sx + bodyW * 0.55, feetY);
+  ctx.quadraticCurveTo(sx + bodyW * 0.5, topY + bodyH * 0.62, sx + bodyW * 0.33, shoulderY);
+  ctx.closePath();
+  ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = color;
-  ctx.font = `${clamp(bodyH * 0.09, 10, 18)}px Courier New, monospace`;
-  ctx.textAlign = 'center';
-  ctx.fillText(`${o.name} ${o.hp}%`, sx, topY - 6);
+  // Pointed hood and dark face opening.
+  ctx.fillStyle = '#0b1b12';
+  ctx.beginPath();
+  ctx.moveTo(sx, topY);
+  ctx.bezierCurveTo(sx - bodyW * 0.38, topY + bodyH * 0.06, sx - bodyW * 0.42, hoodBottomY, sx, hoodBottomY);
+  ctx.bezierCurveTo(sx + bodyW * 0.42, hoodBottomY, sx + bodyW * 0.38, topY + bodyH * 0.06, sx, topY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#010302';
+  ctx.beginPath();
+  ctx.ellipse(sx, topY + bodyH * 0.23, bodyW * 0.2, bodyH * 0.105, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eyes remain subtle at range and disappear naturally with fog.
+  if (bodyH > 20) {
+    ctx.fillStyle = '#9dffd0';
+    const eyeR = clamp(bodyW * 0.025, 0.6, 2.2);
+    ctx.beginPath();
+    ctx.arc(sx - bodyW * 0.07, topY + bodyH * 0.225, eyeR, 0, Math.PI * 2);
+    ctx.arc(sx + bodyW * 0.07, topY + bodyH * 0.225, eyeR, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // A short blade breaks the cloak silhouette and reads as hunter.
+  ctx.strokeStyle = '#b8d8c6';
+  ctx.lineWidth = clamp(lineW * 0.65, 1, 2.5);
+  ctx.beginPath();
+  ctx.moveTo(sx + bodyW * 0.24, topY + bodyH * 0.52);
+  ctx.lineTo(sx + bodyW * 0.58, topY + bodyH * 0.72);
+  ctx.moveTo(sx + bodyW * 0.38, topY + bodyH * 0.59);
+  ctx.lineTo(sx + bodyW * 0.48, topY + bodyH * 0.54);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 // A wireframe box (front face + offset back face + connecting edges) reads

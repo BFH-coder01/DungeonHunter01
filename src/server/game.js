@@ -5,6 +5,7 @@ import { TILE, PLAYER_RADIUS, SIGHT_RADIUS, RESPAWN_DELAY_MS, ACTION } from '../
 import { CONFIG } from '../shared/config.js';
 import { makeRng, randomSeed } from '../shared/rng.js';
 import { makeWeapon, makeSpell } from '../shared/items.js';
+import { AMBIENT_MAX_DIST } from '../shared/sounds.js';
 import { generateDungeon, tileAt } from './dungeon.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -333,6 +334,10 @@ export class Game {
 
   applyBoon(player, item) {
     const range = CONFIG.player.clamp[item.attr];
+    if (!range) {
+      console.warn(`[boon] no clamp range configured for attr "${item.attr}" — skipping`);
+      return;
+    }
     player[item.attr] = clamp(Math.round((player[item.attr] + item.delta) * 10) / 10, range[0], range[1]);
     if (item.attr === 'maxHealth') player.health = Math.min(player.health, player.maxHealth);
     if (item.attr === 'maxMana') player.mana = Math.min(player.mana, player.maxMana);
@@ -418,7 +423,6 @@ export class Game {
     const others = [];
     for (const other of this.players.values()) {
       if (other === player || other.level !== player.level) continue;
-      if (!other.alive) continue;
       if (!this.canSee(player, other.x, other.y)) continue;
       others.push({
         id: other.id,
@@ -426,6 +430,7 @@ export class Game {
         x: round2(other.x),
         y: round2(other.y),
         aim: round2(other.aim),
+        alive: other.alive,
         hp: Math.round((other.health / other.maxHealth) * 100),
       });
     }
@@ -437,6 +442,13 @@ export class Game {
     const drops = this.groundItems.get(player.level)
       .filter((d) => player.explored.has(tileIndex(level, d.x, d.y)))
       .map((d) => ({ uid: d.uid, x: round2(d.x), y: round2(d.y), name: d.item.name, kind: d.item.kind }));
+
+    // A player only needs sources close enough to become audible. Once the
+    // browser learns a point it retains it, while the server remains the
+    // authority for its fixed location and assigned clips.
+    const soundPoints = level.soundPoints
+      .filter((p) => Math.hypot(p.x - player.x, p.y - player.y) <= AMBIENT_MAX_DIST + 2)
+      .map(publicSoundPoint);
 
     const now = Date.now();
     const snapshot = {
@@ -465,6 +477,7 @@ export class Game {
       others,
       caches,
       drops,
+      soundPoints,
       // flat [tileIndex, tileValue, ...] of everything revealed since last frame
       reveal: player.newlyExplored,
       events: this.drainEvents(player.id).map(({ to, ...rest }) => rest),
@@ -487,6 +500,7 @@ export class Game {
       height: level.height,
       // sent once in full — the DM view never has fog to unfog
       tiles: Array.from(level.tiles),
+      soundPoints: level.soundPoints.map(publicSoundPoint),
     };
   }
 
@@ -534,4 +548,18 @@ function publicItem(item) {
   if (item.kind === 'weapon') Object.assign(out, { damage: item.damage, range: item.range, swingMs: item.swingMs });
   if (item.kind === 'spell') Object.assign(out, { damage: item.damage, heal: item.heal, manaCost: item.manaCost, cooldownMs: item.cooldownMs });
   return out;
+}
+
+function publicSoundPoint(point) {
+  return {
+    id: point.id,
+    x: round2(point.x),
+    y: round2(point.y),
+    mode: point.mode,
+    clips: point.clips.map((clip) => ({
+      soundId: clip.soundId,
+      x: round2(clip.x),
+      y: round2(clip.y),
+    })),
+  };
 }

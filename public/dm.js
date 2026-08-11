@@ -17,6 +17,14 @@ let seed = 0, totalLevels = 0, level = 0;
 let players = [];
 let caches = [];
 let drops = [];
+let soundPoints = [];
+
+// Must match FOOTSTEP_MAX_DIST in public/audio.js — how far another
+// player's footsteps are audible, used to draw the "who's making noise"
+// range ring below.
+const FOOTSTEP_RANGE = 16;
+const prevPlayerPos = new Map(); // id -> {x,y}, used to infer "moving" for the audio-range ring
+const movingIds = new Set();
 
 function resize() {
   canvas.width = window.innerWidth;
@@ -42,6 +50,7 @@ function onWelcome(msg) {
   width = msg.width;
   height = msg.height;
   tiles = Uint8Array.from(msg.tiles);
+  soundPoints = msg.soundPoints || [];
   requestAnimationFrame(loop);
 }
 
@@ -50,7 +59,25 @@ function onState(msg) {
   players = msg.players;
   caches = msg.caches;
   drops = msg.drops;
+  updateMoving();
   updateHeader();
+}
+
+// The DM feed doesn't carry an explicit "moving" flag — inferred the same
+// way client.js infers it for other players' footstep audio: a meaningful
+// position delta since the last snapshot.
+function updateMoving() {
+  const presentIds = new Set();
+  for (const p of players) {
+    presentIds.add(p.id);
+    const prev = prevPlayerPos.get(p.id);
+    const moved = p.alive && prev && Math.hypot(p.x - prev.x, p.y - prev.y) > 0.02;
+    if (moved) movingIds.add(p.id); else movingIds.delete(p.id);
+    prevPlayerPos.set(p.id, { x: p.x, y: p.y });
+  }
+  for (const id of Array.from(prevPlayerPos.keys())) {
+    if (!presentIds.has(id)) { prevPlayerPos.delete(id); movingIds.delete(id); }
+  }
 }
 
 function updateHeader() {
@@ -138,12 +165,48 @@ function drawDrops(fit) {
   }
 }
 
+function drawSoundPoints(fit) {
+  const { tile, offX, offY } = fit;
+  const pulse = 1 + Math.sin(performance.now() / 450) * 0.1;
+  for (const point of soundPoints) {
+    const sx = offX + point.x * tile;
+    const sy = offY + point.y * tile;
+    const r = Math.max(3, tile * 0.3 * pulse);
+    ctx.strokeStyle = '#4dc3ff';
+    ctx.fillStyle = 'rgba(77,195,255,0.18)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(sx, sy, r * 1.7, -Math.PI * 0.3, Math.PI * 0.3);
+    ctx.stroke();
+  }
+}
+
+function drawAudioRange(fit, p, sx, sy) {
+  const { tile } = fit;
+  const pulse = 1 + Math.sin(performance.now() / 500) * 0.04;
+  const r = FOOTSTEP_RANGE * tile * pulse;
+  const alpha = 0.12 + Math.sin(performance.now() / 500) * 0.04;
+  ctx.strokeStyle = `rgba(77,195,255,${alpha.toFixed(3)})`;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([tile * 0.3, tile * 0.3]);
+  ctx.beginPath();
+  ctx.arc(sx, sy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
 function drawPlayers(fit) {
   const { tile, offX, offY } = fit;
   for (const p of players) {
     const sx = offX + p.x * tile, sy = offY + p.y * tile;
     const color = p.alive ? colorFor(p.id) : 'rgba(255,77,94,0.5)';
     const r = Math.max(4, tile * 0.4);
+
+    if (p.alive && movingIds.has(p.id)) drawAudioRange(fit, p, sx, sy);
 
     ctx.strokeStyle = color;
     ctx.lineWidth = p.alive ? 2 : 1;
@@ -173,6 +236,7 @@ function loop() {
   if (width && height) {
     const fit = computeFit();
     drawMap(fit);
+    drawSoundPoints(fit);
     drawCaches(fit);
     drawDrops(fit);
     drawPlayers(fit);

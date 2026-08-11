@@ -27,6 +27,9 @@ There are two ways to view the dungeon:
 - Inventory with pickup/drop. Weapons are held and must be **equipped**
   (stop-and-swap, ~0.9s) — no hotkey instant-switching. Spells are known, not
   held, so casting is immediate as long as mana and cooldown allow it.
+- Other living players appear in first person as unlabeled hooded hunters.
+  When one is killed, their fallen avatar briefly displays their name during
+  the respawn window; living-player names and health remain hidden.
 
 ### Current test configuration
 
@@ -87,36 +90,47 @@ The DungeonMaster view has no controls — it's a read-only overview. Just open
 
 ## Ambient sound
 
-The participant view has footstep audio ([public/audio.js](public/audio.js),
-`public/sfx/footsteps.wav`). Voice chat/proximity mic audio was considered
-and deliberately **not** built — it needs HTTPS (`getUserMedia` requires a
-secure context, and a plain LAN IP doesn't qualify) for a payoff the group
-doesn't need, since everyone's expected to just talk out loud on the same
-wifi/in the same house.
+The participant view has two audio systems ([public/audio.js](public/audio.js)),
+both built on real (user-supplied) audio files in `public/sfx/`, not
+procedural synthesis. Two earlier passes tried generating ambience
+procedurally — first live via Web Audio oscillators, then offline-rendered
+with layered/detuned oscillators and hand-rolled biquad filters for more
+headroom — and both were dropped as too harsh/artificial to keep. That's a
+real, known ceiling on hand-synthesised sound design without actual
+recordings, not something more tuning was going to fix.
 
-`footsteps.wav` is a real (user-supplied) audio file, not a procedural one.
-Two earlier passes tried generating ambience (drips, screams, growls, chain
-clanks, creaks, wind, whispered voice lines) procedurally — first live via
-Web Audio oscillators, then offline-rendered with layered/detuned
-oscillators and hand-rolled biquad filters for more headroom — and both
-were dropped as too harsh/artificial to keep. That's a real, known ceiling
-on hand-synthesised sound design without actual recordings, not something
-more tuning was going to fix. If ambience beyond footsteps comes back,
-expect it to be real audio files too, same as this one.
+Voice chat/proximity mic audio was considered and deliberately **not**
+built — it needs HTTPS (`getUserMedia` requires a secure context, and a
+plain LAN IP doesn't qualify) for a payoff the group doesn't need, since
+everyone's expected to just talk out loud on the same wifi/in the same
+house.
 
-- The file is a ~36s continuous walking sequence, not a single step hit, so
-  it's used as a loopable "walking" bed rather than triggered per-stride:
-  looped for as long as a player is moving, faded out (not cut) when they
-  stop.
+**Footsteps** (`footsteps.wav`, a ~36s continuous walking sequence, not a
+single step hit) — used as a loopable "walking" bed rather than triggered
+per-stride: looped for as long as a player is moving, faded out (not cut)
+when they stop.
 - **Self** plays centered, quiet (immersion). **Other players** are
   positioned via a Web Audio `PannerNode` at their live position — audible
   out to ~16 tiles — so you can hear someone nearby before you see them.
   "Moving" for other players is inferred from snapshot-to-snapshot position
   deltas (their input state isn't known to us, only their position); for
   yourself it's read directly from held movement keys.
-- The listener (camera) position/orientation is updated every frame from
-  the same `renderX`/`renderY`/`viewAngle` the renderer uses, so direction
-  matches what's on screen.
+
+**Ambient points** — 12 authoritative points are placed on floor tiles when
+each seeded dungeon level is generated. Their locations, 1-3 assigned clips,
+and individual/group mode are therefore identical for every participant and
+visible in full on the DungeonMaster map. A player receives a point only when
+they approach its audible radius. Each clip runs on its own timer (the interval
+scales with the clip duration so a 38s clip does not retrigger every 15s).
+**Individual** clips have nearby within-tile source positions; **group** clips
+share one exact-position panner. Web Audio applies directional panning and
+linear distance attenuation out to ~10 tiles. Ambient radius, reference
+distance, and gain are configured centrally in `src/shared/sounds.js` without
+changing footstep volume.
+
+The listener (camera) position/orientation for both systems is updated
+every frame from the same `renderX`/`renderY`/`viewAngle` the renderer
+uses, so direction matches what's on screen.
 
 ## Architecture notes
 
@@ -155,12 +169,9 @@ expect it to be real audio files too, same as this one.
   with a mouse and keyboard.
 - No client-side position prediction/reconciliation, just smoothing (see
   above) — fine on a home LAN, may need revisiting under real latency.
-- Footstep audio was verified for correctness (file loads/decodes, loop
-  starts on movement and fades out on stop, no console errors) but not for
-  how it actually sounds — that needs real ears, not something testable
-  from here. Volume levels (self vs. others, distance falloff) are a first
-  pass, likely worth tuning once someone's actually played with headphones
-  on.
+- Footstep audio has been play-tested: self footsteps and approaching-player
+  direction/distance both sound correct. Ambient locations and tuning remain
+  adjustable in `src/shared/sounds.js` as play-testing continues.
 - `public/sfx/footsteps.wav` was supplied by the user, not generated —
   worth knowing if this project is ever shared or open-sourced, since its
   actual copyright/license status wasn't verified here.

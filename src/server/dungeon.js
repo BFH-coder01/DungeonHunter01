@@ -5,6 +5,7 @@
 import { TILE } from '../shared/constants.js';
 import { CONFIG } from '../shared/config.js';
 import { rollCacheItem } from '../shared/items.js';
+import { AMBIENT_POINT_COUNT, AMBIENT_SOUNDS } from '../shared/sounds.js';
 
 const idx = (level, x, y) => y * level.width + x;
 
@@ -124,6 +125,7 @@ function generateLevel(depth, totalLevels, rng) {
     rooms: [],
     spawnPoints: [],
     caches: [],
+    soundPoints: [],
     stairsDown: null,
     stairsUp: null,
   };
@@ -158,6 +160,23 @@ function generateLevel(depth, totalLevels, rng) {
     item: rollCacheItem(rng),
     looted: false,
   }));
+
+  // Ambient sources are authoritative seeded dungeon entities, like caches.
+  const soundSpots = pickSpread(open, AMBIENT_POINT_COUNT, 5, rng);
+  level.soundPoints = soundSpots.map((p, i) => {
+    const roll = rng();
+    const count = roll < 0.55 ? 1 : roll < 0.85 ? 2 : 3;
+    const sounds = rng.shuffle(AMBIENT_SOUNDS.slice()).slice(0, count);
+    const mode = count > 1 && rng.chance(0.5) ? 'group' : 'individual';
+    const x = p.x + 0.5;
+    const y = p.y + 0.5;
+    const clips = sounds.map((sound) => ({
+      soundId: sound.id,
+      x: mode === 'group' ? x : x + rng.float(-0.35, 0.35),
+      y: mode === 'group' ? y : y + rng.float(-0.35, 0.35),
+    }));
+    return { id: `s${depth}_${i}`, x, y, mode, clips };
+  });
 
   // Stairs, when there is more than one level to move between.
   const stairCandidates = pickSpread(open, 2, 12, rng);

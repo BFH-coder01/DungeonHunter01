@@ -34,10 +34,14 @@ export const CONFIG = {
     inventorySize: 8,
     // Swapping a held item is deliberate: you stop, you swap, you move on.
     weaponSwapMs: 900,
-    // Attribute floors/ceilings after caches have been applied.
+    // Attribute floors/ceilings after caches have been applied. Keys must
+    // match the boon `attr` names in items.js (which match the real player
+    // fields, e.g. player.maxHealth) — a health/mana vs maxHealth/maxMana
+    // mismatch here crashed the server the moment anyone picked up a
+    // Vital Draught or Wellspring Vial boon.
     clamp: {
-      health: [20, 400],
-      mana: [0, 400],
+      maxHealth: [20, 400],
+      maxMana: [0, 400],
       speed: [1.2, 9.0],
       manaRegenPerSec: [0.5, 20],
     },

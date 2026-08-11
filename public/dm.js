@@ -120,13 +120,10 @@ function drawCaches(fit) {
   const pulse = 1 + Math.sin(performance.now() / 400) * 0.08;
   for (const c of caches) {
     const sx = offX + c.x * tile, sy = offY + c.y * tile;
-    const r = tile * 0.34 * pulse;
+    const w = tile * 0.62 * pulse, h = tile * 0.5 * pulse;
     ctx.strokeStyle = '#ffcf4d';
     ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r, sy); ctx.lineTo(sx, sy + r); ctx.lineTo(sx - r, sy);
-    ctx.closePath();
-    ctx.stroke();
+    ctx.strokeRect(sx - w / 2, sy - h / 2, w, h);
   }
 }
 

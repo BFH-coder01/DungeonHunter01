@@ -117,20 +117,15 @@ function normalizeAngle(a) {
   return a;
 }
 
-// Arrow left/right are a discrete snap-turn (1/8 of a full circle per press),
-// not a strafe — mirrors classic dungeon-crawler turning. Mouse-look and A/D
-// strafing are unaffected. e.repeat is ignored so holding the key doesn't
-// spin continuously; release and press again for the next 45°.
-const TURN_STEP = Math.PI / 4;
-
+// Turning is mouse-only now — a discrete keyboard snap-turn mid-corridor was
+// yanking the view (and therefore "forward") into a wall. Arrow up/down are
+// forward/back, A/D are strafe; nothing on the keyboard changes view angle.
 const keys = new Set();
 window.addEventListener('keydown', (e) => {
   if (document.activeElement === nameInput) return;
   keys.add(e.key.toLowerCase());
-  if (e.key === 'e' || e.key === 'E') sendAction(ACTION.PICKUP);
+  if (e.key === 'e' || e.key === 'E' || e.key === 'o' || e.key === 'O') sendAction(ACTION.PICKUP);
   if (e.key === ' ') { sendAction(ACTION.CAST); e.preventDefault(); }
-  if (e.key === 'ArrowLeft' && !e.repeat) { viewAngle = normalizeAngle(viewAngle - TURN_STEP); e.preventDefault(); }
-  if (e.key === 'ArrowRight' && !e.repeat) { viewAngle = normalizeAngle(viewAngle + TURN_STEP); e.preventDefault(); }
   const n = Number(e.key);
   if (n >= 1 && n <= 8) equipSlot(n - 1);
 });
@@ -465,15 +460,16 @@ function drawPlayerGlyph(o, sx, feetY, fullH, dist) {
 }
 
 function drawCacheGlyph(sx, feetY, fullH) {
-  const size = clamp(fullH * 0.3, 8, canvas.height * 0.5);
-  const cy = feetY - size / 2;
-  const pulse = 1 + Math.sin(performance.now() / 400) * 0.08;
+  const h = clamp(fullH * 0.26, 7, canvas.height * 0.45);
+  const pulse = 1 + Math.sin(performance.now() / 400) * 0.06;
+  const rh = h * pulse, rw = rh * 1.3;
+  const top = feetY - rh;
   ctx.strokeStyle = '#ffcf4d';
-  ctx.lineWidth = clamp(size * 0.05, 1, 3);
+  ctx.lineWidth = clamp(rh * 0.08, 1, 3);
+  ctx.strokeRect(sx - rw / 2, top, rw, rh);
   ctx.beginPath();
-  ctx.moveTo(sx, cy - size * pulse); ctx.lineTo(sx + size * pulse, cy);
-  ctx.lineTo(sx, cy + size * pulse); ctx.lineTo(sx - size * pulse, cy);
-  ctx.closePath();
+  ctx.moveTo(sx - rw / 2, top + rh * 0.4);
+  ctx.lineTo(sx + rw / 2, top + rh * 0.4);
   ctx.stroke();
 }
 

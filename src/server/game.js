@@ -295,10 +295,11 @@ export class Game {
 
   doPickup(player, now) {
     const level = this.levels[player.level];
-    // Caches first, then loose items on the floor.
+    // Caches can be opened from about a tile away (E or O); loose floor
+    // items still need you standing right on top of them.
     for (const cache of level.caches) {
       if (cache.looted) continue;
-      if (Math.hypot(cache.x - player.x, cache.y - player.y) > 0.9) continue;
+      if (Math.hypot(cache.x - player.x, cache.y - player.y) > 1.1) continue;
       cache.looted = true;
       this.giveItem(player, cache.item, now);
       return;

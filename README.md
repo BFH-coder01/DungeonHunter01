@@ -67,11 +67,15 @@ duplication to drift out of sync.
 
 ## Controls — participant view
 
-- Move: WASD / arrow keys, relative to where you're looking
-- Look: mouse (click the view to capture the pointer; Esc releases it)
+- Forward/back: W/S or ↑/↓
+- Strafe left/right: A/D
+- Turn: mouse only (click the view to capture the pointer; Esc releases it).
+  Turning is deliberately not on the keyboard — a keyboard snap-turn used to
+  yank your facing (and therefore "forward") into a wall mid-corridor.
 - Attack (equipped weapon): left click
 - Cast (equipped spell): right click / space
-- Pick up: E
+- Open a cache / pick up a floor item: E or O. Caches can be opened from
+  about a tile away; loose floor items need you standing on them.
 - Inventory: click a slot to equip it, right-click a slot to drop it. Number
   keys 1–8 also equip a slot.
 

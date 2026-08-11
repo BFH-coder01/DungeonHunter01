@@ -1,8 +1,9 @@
 # DungeonHunter01
 
 Browser-based, procedurally generated dungeon crawler for play over the home
-wifi. One machine runs the server; everyone else joins from a browser on the
-same network. No installs, no accounts — just a URL.
+wifi. One host machine runs the Node.js server; everyone else joins from a
+browser on the same network. Players need no installation or account — just
+the host's LAN URL.
 
 There are two ways to view the dungeon:
 
@@ -25,8 +26,9 @@ There are two ways to view the dungeon:
 - Random per-player attributes (health, mana, move speed); caches can raise
   *or* lower an attribute when looted (it's a gamble).
 - Inventory with pickup/drop. Weapons are held and must be **equipped**
-  (stop-and-swap, ~0.9s) — no hotkey instant-switching. Spells are known, not
-  held, so casting is immediate as long as mana and cooldown allow it.
+  (stop-and-swap, ~0.9s) — no hotkey instant-switching. Preparing a known
+  spell is immediate, but every cast has a visible server-timed windup before
+  healing resolves or a projectile launches.
 - Other living players appear in first person as unlabeled hooded hunters.
   When one is killed, their fallen avatar briefly displays their name during
   the respawn window; living-player names and health remain hidden.
@@ -41,32 +43,56 @@ real multi-level / fog-of-war behaviour. Note that with `revealAll` on, the
 first-person view's minimap will show the entire level from the start too —
 that's expected; it only reflects real fog-of-war once the flag is off.
 
-## Running it
+## Quick start
+
+The host needs Git, Node.js 20 or newer, and npm. This is a private repository,
+so the host must also have access to `BFH-coder01/DungeonHunter01` on GitHub.
 
 ```bash
-npm install
+git clone git@github.com:BFH-coder01/DungeonHunter01.git
+cd DungeonHunter01
+npm ci
 npm start
 ```
 
 The server prints a LAN URL (e.g. `http://192.168.1.23:8080`) — open that on
 any device on the same wifi to join, or add `/dm.html` for the spectator
-view. `npm run dev` restarts on file changes.
+view. Port 8080 is the default; it changes only when the host sets the `PORT`
+environment variable. `npm run dev` restarts on file changes.
+
+There are no Python dependencies. `requirements.txt` is present for deployment
+systems that expect it, while `package-lock.json` is the authoritative runtime
+dependency lockfile. See [SETUP.md](SETUP.md) for private-clone options,
+Windows firewall guidance, verification, updating, and port troubleshooting.
+
+## Documentation
+
+- [SETUP.md](SETUP.md) — fresh clone, installation, LAN access, verification,
+  updating, and deployment notes.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — runtime topology, authority boundaries,
+  protocol flow, visibility policy, combat, audio, and known constraints.
+- [CLAUDE.md](CLAUDE.md) — implementation guardrails and handoff notes for
+  coding agents.
 
 ## Layout
 
 ```
 src/
-  shared/     constants, config, RNG, item tables — used by server AND client
+  shared/     constants, sound data, config, RNG, and item tables
   server/     authoritative simulation: dungeon generation, game state, ws/http server
 public/
   index.html, client.js   participant first-person view
   dm.html, dm.js          DungeonMaster spectator view
+  audio.js, sfx/          spatial playback and source audio
   style.css               shared styling for both
+SETUP.md                  fresh-clone and host instructions
+ARCHITECTURE.md           system design and data-flow reference
 ```
 
-The client fetches shared code straight from `/shared/*` — server and browser
-run the exact same constants/config/item definitions, so there's no
-duplication to drift out of sync.
+The server exposes `src/shared/` at `/shared/`. Browser modules import the
+protocol/constants and sound catalogue directly; server-only configuration,
+item tables, and seeded RNG code remain in the same shared source area without
+being bundled. There is no frontend build step.
 
 ## Controls — participant view
 
@@ -137,14 +163,17 @@ uses, so direction matches what's on screen.
 
 ## Architecture notes
 
+The detailed architecture reference is [ARCHITECTURE.md](ARCHITECTURE.md).
+
 - The server is authoritative for everything — position, combat, inventory.
   Clients only ever send movement intent (`mx`, `my`, view angle) and
-  discrete actions (attack/cast/pickup/drop/equip); they never assert state.
+  discrete actions (attack/cast/pickup/drop/equip/move-slot); they never assert
+  state.
 - The first-person renderer is a classic grid-DDA raycaster (Wolfenstein-style).
   Walls, floor and ceiling are all texture-mapped with procedurally-generated
   stone textures (drawn once to an offscreen canvas at load — no image
   assets, no build step) rather than real photos, partly to keep the
-  zero-dependency architecture and partly to sidestep licensing questions
+  zero-build browser architecture and partly to sidestep licensing questions
   around using stock photography or 3D-model-site assets as game content.
   Walls are drawn per-column via `drawImage` (`RAYS` columns, not full pixel
   width — deliberately chunky/retro and cheap); floor/ceiling use true

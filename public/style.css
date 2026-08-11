@@ -1,0 +1,202 @@
+:root {
+  --ink: #35ff8a;
+  --ink-dim: #14612f;
+  --bg: #04070a;
+  --danger: #ff4d5e;
+  --warn: #ffcf4d;
+  --panel: rgba(4, 12, 8, 0.86);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Courier New', ui-monospace, Consolas, monospace;
+  overflow: hidden;
+}
+
+#view {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: crosshair;
+}
+
+.hidden { display: none !important; }
+
+/* --- join overlay --- */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(20, 97, 47, 0.15), var(--bg) 70%);
+}
+
+.panel {
+  border: 1px solid var(--ink-dim);
+  padding: 32px 40px;
+  text-align: center;
+  background: var(--panel);
+  box-shadow: 0 0 40px rgba(53, 255, 138, 0.12);
+  max-width: 480px;
+}
+
+.panel h1 {
+  margin: 0 0 4px;
+  letter-spacing: 4px;
+  font-size: 28px;
+  text-shadow: 0 0 8px var(--ink);
+}
+.panel h1 span { color: var(--warn); }
+
+.panel .sub { color: var(--ink-dim); margin: 0 0 20px; font-size: 12px; }
+
+.panel input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--ink-dim);
+  color: var(--ink);
+  padding: 10px;
+  font: inherit;
+  text-align: center;
+  margin-bottom: 12px;
+}
+.panel input:focus { outline: none; border-color: var(--ink); }
+
+.panel button {
+  width: 100%;
+  background: var(--ink);
+  color: #04140a;
+  border: none;
+  padding: 10px;
+  font: inherit;
+  font-weight: bold;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+.panel button:hover { background: #6dffb0; }
+
+.panel .hint {
+  margin-top: 18px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-dim);
+}
+
+/* --- HUD --- */
+
+#hud { position: absolute; inset: 0; pointer-events: none; }
+
+.bars {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.bar {
+  position: relative;
+  width: 180px;
+  height: 18px;
+  border: 1px solid var(--ink-dim);
+  background: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.bar .fill { position: absolute; inset: 0; width: 100%; transform-origin: left; background: var(--ink); }
+.bar.mp .fill { background: #4dc3ff; }
+.bar span {
+  position: relative;
+  z-index: 1;
+  display: block;
+  text-align: center;
+  font-size: 11px;
+  line-height: 18px;
+  color: #04140a;
+  mix-blend-mode: difference;
+  color: #fff;
+}
+
+.stat {
+  border: 1px solid var(--ink-dim);
+  background: rgba(0, 0, 0, 0.5);
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 18px;
+}
+.stat b { color: var(--warn); }
+
+#deadBanner, #swapBanner {
+  position: absolute;
+  top: 46px;
+  left: 14px;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  background: rgba(0, 0, 0, 0.6);
+  padding: 4px 10px;
+  font-size: 12px;
+}
+#swapBanner { border-color: var(--warn); color: var(--warn); top: 46px; }
+
+#inventory {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.slot {
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--ink-dim);
+  background: rgba(0, 0, 0, 0.55);
+  font-size: 10px;
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 4px;
+  cursor: pointer;
+  position: relative;
+}
+.slot:hover { border-color: var(--ink); }
+.slot .k { position: absolute; top: 2px; left: 4px; color: var(--ink-dim); font-size: 9px; }
+.slot.equipped { border-color: var(--warn); box-shadow: inset 0 0 6px rgba(255, 207, 77, 0.4); }
+.slot.weapon .name { color: #ff9f5a; }
+.slot.spell .name { color: #4dc3ff; }
+.slot.empty { border-style: dashed; }
+
+#log {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  text-align: right;
+}
+#log div {
+  background: rgba(0, 0, 0, 0.45);
+  padding: 2px 6px;
+  border-right: 2px solid var(--ink-dim);
+  opacity: 0.9;
+}
+#log div.bad { border-color: var(--danger); color: var(--danger); }
+#log div.good { border-color: var(--warn); color: var(--warn); }

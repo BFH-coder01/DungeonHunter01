@@ -249,5 +249,9 @@ The detailed architecture reference is [ARCHITECTURE.md](ARCHITECTURE.md).
   already tracks stairs; client doesn't use them to change level yet).
 - Persistent player identity across reconnects.
 - Balance pass on cache boon ranges, weapon/spell stats.
+- Server-authoritative item lifecycles: equipment wears down, spells expire,
+  and consumed or expired rewards release their source cache to regenerate at
+  a new valid random location. This is intended to circulate desirable rewards
+  between players instead of allowing permanent inventory hoarding.
 - Mobile/touch controls for participants.
 - DM view: pan/zoom and multi-level switching once dungeons exceed 1 level.

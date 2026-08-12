@@ -155,6 +155,28 @@ Death drops inventory, updates kills/deaths, exposes the defeated player's name
 on the fallen avatar, and schedules a three-second respawn. Living opponents
 remain unlabeled hooded hunters in the player UI.
 
+### Planned reward lifecycle
+
+Equipment durability, spell lifetimes, and cache regeneration are planned but
+not yet implemented. The server will remain authoritative for every lifecycle
+transition. Equipment will wear down through use, spells will cease to be
+available when their configured lifetime is complete, and the reward will then
+leave its owner's inventory.
+
+Each generated reward will retain an association with the cache that supplied
+it. Once that reward's lifecycle completes, the cache becomes eligible to
+regenerate at a different seeded-valid random floor location rather than
+remaining permanently exhausted. Placement must use the dungeon's existing
+collision and reachability constraints. The design goal is circulation: scarce
+equipment and spells repeatedly return to play so one player cannot permanently
+deny everyone else access by hoarding them.
+
+Before implementation, balance decisions still required include the durability
+unit for each equipment class, whether spell lifetime is measured by time or
+uses, cache regeneration delay, and how dropped or transferred rewards retain
+their source association. These are tuning decisions; authoritative expiry,
+inventory removal, and relocated cache regeneration are the required behavior.
+
 ## Rendering and audio
 
 The player Canvas uses a grid-DDA raycaster with procedural wall, floor, and
@@ -187,10 +209,10 @@ before public distribution.
 
 ## Testing and evolution
 
-Verification currently consists of syntax checks, targeted simulation/protocol
-probes, and manual two-window or multi-device gameplay. There is no automated
-`npm test` suite yet.
+Verification includes the automated `npm test` server/gameplay regression
+suite, syntax checks, targeted simulation/protocol probes, and manual two-window
+or multi-device gameplay checks.
 
 Near-term architectural work includes final strict visibility semantics,
-multi-level traversal, reconnect identity, mobile controls, combat balance, and
-automated server/protocol tests.
+multi-level traversal, reconnect identity, mobile controls, combat balance,
+reward lifecycles, and broader server/protocol tests.

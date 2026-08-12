@@ -59,6 +59,23 @@ repository without installing Python packages.
 npm start
 ```
 
+On Windows, `server.bat` provides a controller that can be double-clicked for
+an interactive menu or called from Command Prompt:
+
+```bat
+server.bat start
+server.bat stop
+server.bat restart
+server.bat status
+```
+
+The controller starts the Node process in a minimized window, writes output to
+`server.stdout.log` and `server.stderr.log`, and waits for the configured port
+to begin listening. Before stopping a listener, it verifies that the owning
+process is Node.js so an unrelated service on the same port is not terminated.
+The commands are idempotent: starting an already-running server or stopping an
+already-stopped server is safe.
+
 The process binds to all local interfaces on TCP port 8080 and prints URLs such
 as:
 
@@ -106,6 +123,14 @@ PORT=8090 npm start
 
 Remove or unset `PORT` to return to 8080.
 
+The Windows controller also respects `PORT`. Set it in the same Command Prompt
+before invoking the batch file:
+
+```bat
+set PORT=8090
+server.bat start
+```
+
 If startup reports that port 8080 is already in use, identify the listener on
 Windows before stopping anything:
 
@@ -131,8 +156,9 @@ After startup:
 5. Connect a second device using the printed LAN URL and confirm movement and
    spatial audio.
 
-The current repository has syntax and manual gameplay checks but no automated
-`npm test` script yet.
+Run the automated server and gameplay regression suite with `npm test`. Manual
+multi-window and multi-device checks remain important for rendering, controls,
+network play, and spatial audio.
 
 ## Update an existing clone
 

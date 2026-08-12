@@ -115,6 +115,7 @@ html, body {
 }
 .bar .fill { position: absolute; inset: 0; width: 100%; transform-origin: left; background: var(--ink); }
 .bar.mp .fill { background: #4dc3ff; }
+.bar.stamina .fill { background: #f0c84b; }
 .bar span {
   position: relative;
   z-index: 1;

@@ -14,9 +14,9 @@ export const CONFIG = {
 
   // --- dungeon ----------------------------------------------------------
   dungeon: {
-    width: 64,
-    height: 44,
-    roomAttempts: 140,
+    width: 192,
+    height: 132,
+    roomAttempts: 1260,
     roomMin: 5,
     roomMax: 12,
     // spawn points and caches scale with the number of rooms carved
@@ -31,6 +31,9 @@ export const CONFIG = {
     mana: [40, 110],
     speed: [3.2, 5.4], // tiles per second
     manaRegenPerSec: [2.5, 6.0],
+    maxStamina: 100,
+    staminaRegenPerSec: 24,
+    staminaRegenDelayMs: 700,
     inventorySize: 8,
     inventorySideSize: 4,
     // Swapping a held item is deliberate: you stop, you swap, you move on.
@@ -46,5 +49,15 @@ export const CONFIG = {
       speed: [1.2, 9.0],
       manaRegenPerSec: [0.5, 20],
     },
+  },
+
+  // Combat actions are exclusive. Movement remains responsive, but committed
+  // actions scale it down until their wind-up/recovery has finished.
+  combat: {
+    castMoveScale: 0.4,
+    battlePortalRadius: 0.65,
+    battlePortalCooldownMs: 20_000,
+    battlePortalMinCenterDistanceRatio: 0.25,
+    linkPortalRadius: 0.6,
   },
 };

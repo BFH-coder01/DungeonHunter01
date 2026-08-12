@@ -13,6 +13,8 @@ let others = new Map();
 let caches = new Map();
 let drops = new Map();
 let projectiles = new Map();
+let battlePortal = null;
+let linkPortals = new Map();
 
 const audio = createAmbientAudio();
 const prevOthersPos = new Map(); // player id -> {x,y}, used to detect movement for footstep audio
@@ -86,6 +88,8 @@ function onState(msg) {
   caches = new Map(msg.caches.map((c) => [c.id, c]));
   drops = new Map(msg.drops.map((d) => [d.uid, d]));
   projectiles = new Map((msg.projectiles || []).map((p) => [p.id, p]));
+  battlePortal = msg.battlePortal || null;
+  linkPortals = new Map((msg.linkPortals || []).map((p) => [p.id, p]));
 
   updateOtherFootsteps(msg.others);
 
@@ -220,6 +224,8 @@ const hpFill = document.getElementById('hpFill');
 const hpText = document.getElementById('hpText');
 const mpFill = document.getElementById('mpFill');
 const mpText = document.getElementById('mpText');
+const staminaFill = document.getElementById('staminaFill');
+const staminaText = document.getElementById('staminaText');
 const spdText = document.getElementById('spdText');
 const lvlText = document.getElementById('lvlText');
 const kdText = document.getElementById('kdText');
@@ -236,6 +242,8 @@ function updateHud() {
   hpText.textContent = `HP ${self.health}/${self.maxHealth}`;
   mpFill.style.transform = `scaleX(${Math.max(0, self.mana / self.maxMana)})`;
   mpText.textContent = `MP ${self.mana}/${self.maxMana}`;
+  staminaFill.style.transform = `scaleX(${Math.max(0, self.stamina / self.maxStamina)})`;
+  staminaText.textContent = `STA ${self.stamina}/${self.maxStamina}`;
   spdText.textContent = self.speed.toFixed(1);
   lvlText.textContent = self.level + 1;
   kdText.textContent = `${self.kills}/${self.deaths}`;
@@ -284,6 +292,9 @@ function renderInventory() {
         const d = document.createElement('div');
         d.textContent = `dmg ${item.damage}`;
         slot.appendChild(d);
+        const s = document.createElement('div');
+        s.textContent = `sta ${item.staminaCost}`;
+        slot.appendChild(s);
       } else if (item.kind === 'spell') {
         const d = document.createElement('div');
         d.textContent = item.heal ? `heal ${item.heal}` : `dmg ${item.damage}`;
@@ -295,6 +306,9 @@ function renderInventory() {
         const d = document.createElement('div');
         d.textContent = `dodge ${item.dodgeDistance}`;
         slot.appendChild(d);
+        const s = document.createElement('div');
+        s.textContent = `sta ${item.staminaCost}`;
+        slot.appendChild(s);
       }
       slot.addEventListener('click', () => sendAction(ACTION.EQUIP, { uid: item.uid }));
       slot.addEventListener('contextmenu', (e) => {
@@ -345,6 +359,17 @@ function handleEvent(ev) {
     case 'drop': log(`dropped ${ev.name}`); break;
     case 'full': log(`inventory full — can't pick up ${ev.name}`, 'bad'); break;
     case 'nomana': log(`not enough mana for ${ev.name} (need ${ev.need})`, 'bad'); break;
+    case 'nostamina': log(`not enough stamina for ${ev.name} (need ${ev.need})`, 'bad'); break;
+    case 'battleportal':
+      renderX = self.x;
+      renderY = self.y;
+      log(`${ev.by} opened the battle portal — ${ev.fighters} hunter(s) drawn into the arena!`, 'bad');
+      break;
+    case 'linkportal':
+      renderX = self.x;
+      renderY = self.y;
+      log(`travelled through the ${ev.color} link portal`, 'good');
+      break;
     case 'swap': log(`swapping to ${ev.name}…`); break;
     case 'unequip': log(`unequipped ${ev.name}`); break;
     case 'dodge': log(`${ev.name}: dodge`); break;
@@ -619,6 +644,8 @@ function collectBillboards() {
   for (const c of caches.values()) list.push({ kind: 'cache', ref: c, x: c.x, y: c.y });
   for (const d of drops.values()) list.push({ kind: 'drop', ref: d, x: d.x, y: d.y });
   for (const p of projectiles.values()) list.push({ kind: 'projectile', ref: p, x: p.x, y: p.y });
+  if (battlePortal) list.push({ kind: 'battlePortal', ref: battlePortal, x: battlePortal.x, y: battlePortal.y });
+  for (const p of linkPortals.values()) list.push({ kind: 'linkPortal', ref: p, x: p.x, y: p.y });
 
   const visible = [];
   for (const item of list) {
@@ -627,7 +654,10 @@ function collectBillboards() {
     if (dist < 0.05 || dist > MAX_DIST) continue;
     const diff = normalizeAngle(Math.atan2(dy, dx) - viewAngle);
     if (Math.abs(diff) > FOV / 2 + 0.3) continue;
-    if (!clientHasLineOfSight(renderX, renderY, item.x, item.y)) continue;
+    const isPortal = item.kind === 'battlePortal' || item.kind === 'linkPortal';
+    // Portal glow is a supernatural landmark: nearby rings remain visible
+    // through intervening walls, unlike ordinary physical billboards.
+    if (!isPortal && !clientHasLineOfSight(renderX, renderY, item.x, item.y)) continue;
     item.dist = dist * Math.cos(diff);
     item.diff = diff;
     visible.push(item);
@@ -645,8 +675,73 @@ function drawBillboards(horizon, floorScale, w, h) {
     if (item.kind === 'player') drawPlayerGlyph(item.ref, sx, feetY, fullH, item.dist);
     else if (item.kind === 'cache') drawCacheGlyph(sx, feetY, fullH);
     else if (item.kind === 'drop') drawDropGlyph(item.ref, sx, feetY, fullH);
-    else drawProjectileGlyph(item.ref, sx, feetY, fullH);
+    else if (item.kind === 'projectile') drawProjectileGlyph(item.ref, sx, feetY, fullH);
+    else if (item.kind === 'battlePortal') drawBattlePortalGlyph(item.ref, sx, feetY, fullH);
+    else drawLinkPortalGlyph(item.ref, sx, feetY, fullH);
   }
+}
+
+function drawBattlePortalGlyph(portal, sx, feetY, fullH) {
+  const t = performance.now() / 1000;
+  const portalH = clamp(fullH * 0.78, 26, canvas.height * 1.25);
+  const portalW = portalH * 0.48;
+  const cy = feetY - portalH * 0.48;
+  const activeAlpha = portal.active ? 1 : 0.28;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.shadowColor = '#ff2038';
+  ctx.shadowBlur = clamp(portalW * 0.22, 5, 28);
+  ctx.lineWidth = clamp(portalW * 0.045, 1.5, 5);
+  for (let i = 0; i < 5; i++) {
+    const phase = t * (1.2 + i * 0.17) + i * 1.1;
+    const wobbleX = Math.sin(phase) * portalW * 0.09;
+    const wobbleY = Math.cos(phase * 1.3) * portalH * 0.035;
+    const scale = 0.55 + i * 0.12 + Math.sin(phase * 1.7) * 0.035;
+    ctx.strokeStyle = `rgba(255,${25 + i * 10},${45 + i * 8},${activeAlpha * (0.45 + i * 0.1)})`;
+    ctx.beginPath();
+    ctx.ellipse(sx + wobbleX, cy + wobbleY, portalW * scale, portalH * scale * 0.5, phase * 0.22, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = `rgba(120,0,12,${activeAlpha * 0.22})`;
+  ctx.beginPath();
+  ctx.ellipse(sx, cy, portalW * 0.5, portalH * 0.48, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+const LINK_PORTAL_COLORS = {
+  green: [40, 255, 125],
+  blue: [50, 155, 255],
+  yellow: [255, 220, 45],
+};
+
+function drawLinkPortalGlyph(portal, sx, feetY, fullH) {
+  const rgb = LINK_PORTAL_COLORS[portal.color] || [255, 255, 255];
+  const t = performance.now() / 1000;
+  const portalH = clamp(fullH * 0.78, 26, canvas.height * 1.25);
+  const portalW = portalH * 0.48;
+  const cy = feetY - portalH * 0.48;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.shadowColor = `rgb(${rgb.join(',')})`;
+  ctx.shadowBlur = clamp(portalW * 0.22, 5, 28);
+  ctx.lineWidth = clamp(portalW * 0.045, 1.5, 5);
+  for (let i = 0; i < 5; i++) {
+    const phase = t * (1.2 + i * 0.17) + i * 1.1;
+    const wobbleX = Math.sin(phase) * portalW * 0.09;
+    const wobbleY = Math.cos(phase * 1.3) * portalH * 0.035;
+    const scale = 0.55 + i * 0.12 + Math.sin(phase * 1.7) * 0.035;
+    ctx.strokeStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${0.45 + i * 0.1})`;
+    ctx.beginPath();
+    ctx.ellipse(sx + wobbleX, cy + wobbleY, portalW * scale, portalH * scale * 0.5, phase * 0.22, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = `rgba(${Math.round(rgb[0] * 0.45)},${Math.round(rgb[1] * 0.45)},${Math.round(rgb[2] * 0.45)},0.22)`;
+  ctx.beginPath();
+  ctx.ellipse(sx, cy, portalW * 0.5, portalH * 0.48, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawPlayerGlyph(o, sx, feetY, fullH, dist) {
@@ -1071,6 +1166,20 @@ function drawMinimap() {
     mctx.fill();
   }
 
+  if (battlePortal) drawPortalMinimapMarker(
+    battlePortal,
+    battlePortal.active ? '#ff2038' : 'rgba(255,32,56,0.35)',
+    cx,
+    cy,
+    tilePx,
+    size,
+  );
+
+  for (const portal of linkPortals.values()) {
+    const rgb = LINK_PORTAL_COLORS[portal.color] || [255, 255, 255];
+    drawPortalMinimapMarker(portal, `rgb(${rgb.join(',')})`, cx, cy, tilePx, size);
+  }
+
   mctx.fillStyle = '#ffffff';
   mctx.strokeStyle = '#ffffff';
   mctx.lineWidth = 1.5;
@@ -1081,6 +1190,39 @@ function drawMinimap() {
   mctx.moveTo(size / 2, size / 2);
   mctx.lineTo(size / 2 + Math.cos(viewAngle) * 11, size / 2 + Math.sin(viewAngle) * 11);
   mctx.stroke();
+}
+
+function drawPortalMinimapMarker(portal, color, cx, cy, tilePx, size) {
+  const margin = 8;
+  const rawX = size / 2 + (portal.x - cx) * tilePx;
+  const rawY = size / 2 + (portal.y - cy) * tilePx;
+  const offscreen = rawX < margin || rawX > size - margin || rawY < margin || rawY > size - margin;
+  let sx = rawX;
+  let sy = rawY;
+  if (offscreen) {
+    const dx = rawX - size / 2;
+    const dy = rawY - size / 2;
+    const scale = Math.min(
+      (size / 2 - margin) / Math.max(Math.abs(dx), 0.001),
+      (size / 2 - margin) / Math.max(Math.abs(dy), 0.001),
+    );
+    sx = size / 2 + dx * scale;
+    sy = size / 2 + dy * scale;
+  }
+  mctx.save();
+  mctx.strokeStyle = color;
+  mctx.fillStyle = color;
+  mctx.lineWidth = offscreen ? 2.5 : 1.75;
+  if (offscreen) mctx.setLineDash([2, 2]);
+  mctx.beginPath();
+  mctx.arc(sx, sy, (offscreen ? 5 : 4) + Math.sin(performance.now() / 220), 0, Math.PI * 2);
+  mctx.stroke();
+  mctx.setLineDash([]);
+  mctx.globalAlpha = 0.65;
+  mctx.beginPath();
+  mctx.arc(sx, sy, 2, 0, Math.PI * 2);
+  mctx.fill();
+  mctx.restore();
 }
 
 function loop(now) {

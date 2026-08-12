@@ -19,6 +19,8 @@ let caches = [];
 let drops = [];
 let soundPoints = [];
 let projectiles = [];
+let battlePortal = null;
+let linkPortals = [];
 
 // Must match FOOTSTEP_MAX_DIST in public/audio.js — how far another
 // player's footsteps are audible, used to draw the "who's making noise"
@@ -61,6 +63,8 @@ function onState(msg) {
   caches = msg.caches;
   drops = msg.drops;
   projectiles = msg.projectiles || [];
+  battlePortal = msg.battlePortal || null;
+  linkPortals = msg.linkPortals || [];
   updateMoving();
   updateHeader();
 }
@@ -178,6 +182,59 @@ function drawProjectiles(fit) {
   }
 }
 
+function drawBattlePortal(fit) {
+  if (!battlePortal) return;
+  const { tile, offX, offY } = fit;
+  const sx = offX + battlePortal.x * tile;
+  const sy = offY + battlePortal.y * tile;
+  const t = performance.now() / 1000;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.shadowColor = '#ff2038';
+  ctx.shadowBlur = Math.max(5, tile * 1.5);
+  for (let i = 0; i < 4; i++) {
+    const phase = t * (1.3 + i * 0.2) + i;
+    const r = Math.max(4, tile * (0.5 + i * 0.18));
+    ctx.strokeStyle = battlePortal.active ? `rgba(255,32,56,${0.45 + i * 0.12})` : 'rgba(255,32,56,0.2)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(sx + Math.sin(phase) * tile * 0.16, sy + Math.cos(phase) * tile * 0.16, r, r * 0.58, phase * 0.4, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawLinkPortals(fit) {
+  const { tile, offX, offY } = fit;
+  const colors = { green: '#28ff7d', blue: '#329bff', yellow: '#ffdc2d' };
+  const fills = { green: 'rgba(10,105,45,0.26)', blue: 'rgba(12,55,125,0.26)', yellow: 'rgba(120,92,5,0.26)' };
+  const t = performance.now() / 1000;
+  for (const portal of linkPortals) {
+    const sx = offX + portal.x * tile;
+    const sy = offY + portal.y * tile;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.shadowColor = colors[portal.color] || '#fff';
+    ctx.shadowBlur = Math.max(7, tile * 1.8);
+    for (let i = 0; i < 4; i++) {
+      const phase = t * (1.3 + i * 0.2) + i;
+      const r = Math.max(5, tile * (0.55 + i * 0.2));
+      ctx.strokeStyle = colors[portal.color] || '#fff';
+      ctx.globalAlpha = 0.55 + i * 0.13;
+      ctx.lineWidth = 1.75;
+      ctx.beginPath();
+      ctx.ellipse(sx + Math.sin(phase) * tile * 0.16, sy + Math.cos(phase) * tile * 0.16, r, r * 0.58, phase * 0.4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = fills[portal.color] || 'rgba(255,255,255,0.22)';
+    ctx.beginPath();
+    ctx.arc(sx, sy, Math.max(3, tile * 0.42), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 function drawSoundPoints(fit) {
   const { tile, offX, offY } = fit;
   const pulse = 1 + Math.sin(performance.now() / 450) * 0.1;
@@ -252,6 +309,8 @@ function loop() {
     drawSoundPoints(fit);
     drawCaches(fit);
     drawDrops(fit);
+    drawBattlePortal(fit);
+    drawLinkPortals(fit);
     drawProjectiles(fit);
     drawPlayers(fit);
   }

@@ -1,10 +1,17 @@
 // Ambient sound catalogue and spatial-audio tuning shared by dungeon
 // generation, the server snapshot filter, and browser playback.
 
-export const AMBIENT_POINT_COUNT = 12;
+export const AMBIENT_POINT_MIN = 12;
+export const AMBIENT_BASE_AREA = 64 * 44;
+// Preserve the original 12-point count at 64x44, then scale with the map's
+// linear size. The current map is 3x wider and taller, so it gets 36 points.
+export function ambientPointCount(width, height) {
+  const linearScale = Math.sqrt((width * height) / AMBIENT_BASE_AREA);
+  return Math.max(AMBIENT_POINT_MIN, Math.ceil(AMBIENT_POINT_MIN * linearScale));
+}
 // Ambient tuning lives here so generation, server delivery, and browser audio
 // stay in sync. Gain only affects ambience; footsteps keep their own levels.
-export const AMBIENT_MAX_DIST = 10;
+export const AMBIENT_MAX_DIST = 22;
 export const AMBIENT_REF_DIST = 1.5;
 export const AMBIENT_GAIN = 0.30;
 

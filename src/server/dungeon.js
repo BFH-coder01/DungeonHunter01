@@ -5,7 +5,7 @@
 import { TILE } from '../shared/constants.js';
 import { CONFIG } from '../shared/config.js';
 import { makeShield, rollCacheItem } from '../shared/items.js';
-import { AMBIENT_POINT_COUNT, AMBIENT_SOUNDS } from '../shared/sounds.js';
+import { ambientPointCount, AMBIENT_SOUNDS } from '../shared/sounds.js';
 
 const idx = (level, x, y) => y * level.width + x;
 
@@ -115,6 +115,23 @@ function pickSpread(candidates, count, minSeparation, rng) {
   return chosen;
 }
 
+function pickCoverage(candidates, count, rng) {
+  if (!candidates.length || count <= 0) return [];
+  const chosen = [rng.pick(candidates)];
+  const remaining = candidates.filter((candidate) => candidate !== chosen[0]);
+  while (chosen.length < count && remaining.length) {
+    let bestIndex = 0;
+    let bestNearestSq = -1;
+    for (let i = 0; i < remaining.length; i++) {
+      let nearestSq = Infinity;
+      for (const point of chosen) nearestSq = Math.min(nearestSq, dist2(point, remaining[i]));
+      if (nearestSq > bestNearestSq) { bestNearestSq = nearestSq; bestIndex = i; }
+    }
+    chosen.push(remaining.splice(bestIndex, 1)[0]);
+  }
+  return chosen;
+}
+
 function generateLevel(depth, totalLevels, rng) {
   const { width, height } = CONFIG.dungeon;
   const level = {
@@ -126,6 +143,10 @@ function generateLevel(depth, totalLevels, rng) {
     spawnPoints: [],
     caches: [],
     soundPoints: [],
+    battlePortal: null,
+    battleRoom: null,
+    battleSpawns: [],
+    linkPortals: [],
     stairsDown: null,
     stairsUp: null,
   };
@@ -146,11 +167,80 @@ function generateLevel(depth, totalLevels, rng) {
   const open = openFloorTiles(level);
   const roomCount = Math.max(1, level.rooms.length);
 
+  // The largest room becomes the battle destination. The portal uses the
+  // seeded dungeon RNG to choose a valid floor tile outside both that room and
+  // the central map zone, so every client agrees while each new dungeon moves
+  // the portal around the map's broad outer area.
+  const roomCenter = (room) => ({ x: room.x + room.w / 2, y: room.y + room.h / 2 });
+  const battleRoom = level.rooms.slice().sort((a, b) => b.w * b.h - a.w * a.h)[0];
+  if (battleRoom) {
+    const battleCenter = roomCenter(battleRoom);
+    const mapCenter = { x: level.width / 2, y: level.height / 2 };
+    const minCenterDistance = Math.min(level.width, level.height) * CONFIG.combat.battlePortalMinCenterDistanceRatio;
+    const outsideBattleRoom = (point) => !(
+      point.x >= battleRoom.x && point.x < battleRoom.x + battleRoom.w &&
+      point.y >= battleRoom.y && point.y < battleRoom.y + battleRoom.h
+    );
+    const outerPortalCandidates = open.filter((point) =>
+      outsideBattleRoom(point) && Math.hypot(point.x + 0.5 - mapCenter.x, point.y + 0.5 - mapCenter.y) >= minCenterDistance);
+    const fallbackPortalCandidates = open.filter(outsideBattleRoom);
+    const portalSpot = rng.pick(outerPortalCandidates.length ? outerPortalCandidates : fallbackPortalCandidates);
+    level.battleRoom = { ...battleRoom };
+    level.battlePortal = {
+      id: `bp${depth}`,
+      x: portalSpot.x + 0.5,
+      y: portalSpot.y + 0.5,
+      cooldownUntil: 0,
+    };
+    for (let y = battleRoom.y + 1; y < battleRoom.y + battleRoom.h - 1; y++) {
+      for (let x = battleRoom.x + 1; x < battleRoom.x + battleRoom.w - 1; x++) {
+        level.battleSpawns.push({ x: x + 0.5, y: y + 0.5 });
+      }
+    }
+    level.battleSpawns.sort((a, b) => dist2(b, battleCenter) - dist2(a, battleCenter));
+
+    // Green, blue, and yellow each form a one-to-one bidirectional link. The
+    // first room in each pair is seeded-random; its mate is the farthest
+    // remaining room so the link meaningfully crosses the large map.
+    const redPortalRoom = level.rooms.find((room) =>
+      level.battlePortal.x > room.x && level.battlePortal.x < room.x + room.w &&
+      level.battlePortal.y > room.y && level.battlePortal.y < room.y + room.h);
+    const availableRooms = level.rooms.filter((room) => room !== battleRoom && room !== redPortalRoom);
+    for (const color of ['green', 'blue', 'yellow']) {
+      if (availableRooms.length < 2) break;
+      const firstIndex = rng.int(0, availableRooms.length - 1);
+      const firstRoom = availableRooms.splice(firstIndex, 1)[0];
+      const firstCenter = roomCenter(firstRoom);
+      let secondIndex = 0;
+      for (let i = 1; i < availableRooms.length; i++) {
+        if (dist2(roomCenter(availableRooms[i]), firstCenter) > dist2(roomCenter(availableRooms[secondIndex]), firstCenter)) {
+          secondIndex = i;
+        }
+      }
+      const secondRoom = availableRooms.splice(secondIndex, 1)[0];
+      const a = {
+        id: `lp_${color}_a`, pairId: color, color,
+        x: rng.int(firstRoom.x + 1, firstRoom.x + firstRoom.w - 2) + 0.5,
+        y: rng.int(firstRoom.y + 1, firstRoom.y + firstRoom.h - 2) + 0.5,
+        toId: `lp_${color}_b`,
+      };
+      const b = {
+        id: `lp_${color}_b`, pairId: color, color,
+        x: rng.int(secondRoom.x + 1, secondRoom.x + secondRoom.w - 2) + 0.5,
+        y: rng.int(secondRoom.y + 1, secondRoom.y + secondRoom.h - 2) + 0.5,
+        toId: `lp_${color}_a`,
+      };
+      level.linkPortals.push(a, b);
+    }
+  }
+
   const spawnCount = Math.max(4, Math.round(roomCount * CONFIG.dungeon.spawnPointsPerRoom));
   level.spawnPoints = pickSpread(open, spawnCount, CONFIG.dungeon.minSpawnSeparation, rng)
     .map((p) => ({ x: p.x + 0.5, y: p.y + 0.5 }));
 
   const takenKeys = new Set(level.spawnPoints.map((p) => `${Math.floor(p.x)},${Math.floor(p.y)}`));
+  if (level.battlePortal) takenKeys.add(`${Math.floor(level.battlePortal.x)},${Math.floor(level.battlePortal.y)}`);
+  for (const portal of level.linkPortals) takenKeys.add(`${Math.floor(portal.x)},${Math.floor(portal.y)}`);
   const cacheCandidates = open.filter((p) => !takenKeys.has(`${p.x},${p.y}`));
   const cacheCount = Math.max(3, Math.round(roomCount * CONFIG.dungeon.cachesPerRoom));
   level.caches = pickSpread(cacheCandidates, cacheCount, 4, rng).map((p, i) => ({
@@ -167,7 +257,8 @@ function generateLevel(depth, totalLevels, rng) {
   }
 
   // Ambient sources are authoritative seeded dungeon entities, like caches.
-  const soundSpots = pickSpread(open, AMBIENT_POINT_COUNT, 5, rng);
+  const soundPointCount = ambientPointCount(level.width, level.height);
+  const soundSpots = pickCoverage(open, soundPointCount, rng);
   level.soundPoints = soundSpots.map((p, i) => {
     const roll = rng();
     const count = roll < 0.55 ? 1 : roll < 0.85 ? 2 : 3;

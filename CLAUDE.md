@@ -64,9 +64,10 @@ npm start
 - Ambient sources are authoritative seeded dungeon entities generated in
   `src/server/dungeon.js`, never random client-local points.
 - Sound catalogue and tuning are centralized in `src/shared/sounds.js`:
-  `AMBIENT_POINT_COUNT`, `AMBIENT_MAX_DIST`, `AMBIENT_REF_DIST`, and
+  `ambientPointCount`, `AMBIENT_POINT_MIN`, `AMBIENT_BASE_AREA`,
+  `AMBIENT_MAX_DIST`, `AMBIENT_REF_DIST`, and
   `AMBIENT_GAIN`.
-- Current ambient tuning: 12 points, 10-tile maximum distance, 1.5-tile
+- Current ambient tuning: 36 points on 192×132, 22-tile maximum distance, 1.5-tile
   reference distance, and 0.30 ambient-only gain. Do not change footstep
   volume when tuning ambience.
 - Players receive authoritative points as they approach audible range. The DM
@@ -118,6 +119,18 @@ Current weapon/hand foundation:
   shield hand performs a directional dash with brief invulnerability.
 - First-person weapons animate by attack style, and opponent weapons turn
   amber during their telegraphed windup.
+- Weapon attacks and shield dodges spend authoritative stamina. Regeneration
+  waits for both the configured delay and the active action to finish.
+- Only one attack, cast, dodge, or swap may be active; follow-up key presses are
+  rejected rather than queued. Weapons apply individual movement scales during
+  wind-up and recovery, and WebSocket token buckets protect against flooding.
+- Every level has a seeded-random red battle portal and a large battle destination
+  room. One player crossing it gathers all living players into spread arena
+  positions, cancels active actions, and starts a 20-second retrigger cooldown;
+  normal room exits remain available for retreat.
+- Green, blue, and yellow portals each form a distant bidirectional pair. A
+  per-player arrival lock prevents immediate bounce-back and clears only after
+  the player steps out of the destination portal.
 
 Preserve these gameplay decisions unless the user changes them:
 

@@ -102,8 +102,9 @@ players with identity/health, caches, drops, and projectiles on that level.
 Generation is deterministic for a game seed. Rooms are carved and connected;
 then spread-out spawns, caches, ambient points, and optional stairs are placed.
 Cache contents come from shared item tables, and every generated level is
-guaranteed at least one shield. Twelve ambient points each receive one to three
-seeded clips.
+guaranteed at least one shield. Ambient-point count scales with map dimensions
+(12 minimum, 36 on the current 192×132 test map); farthest-point placement
+keeps coverage even, and each receives one to three seeded clips.
 
 `src/shared/config.js` currently fixes generation to one level. Random 1–10
 level generation exists, but travel between levels remains deferred.
@@ -120,6 +121,30 @@ weapon deals full damage. Server-timed attacks have windup, release, and
 recovery. Shields perform a collision-checked directional dash with brief
 invulnerability and cooldown. Spell selection is immediate, but casting has a
 visible windup.
+
+Weapon attacks and shield dodges consume server-owned stamina. Regeneration
+starts only after a short delay and after the active combat action has ended.
+Combat actions are mutually exclusive with no queued follow-up action. Weapon
+definitions provide separate wind-up and recovery movement scales, while spell
+wind-up uses a shared movement scale. Per-connection token buckets bound total,
+movement, and action WebSocket message rates before intent reaches the game.
+
+Generation designates the largest room as a battle destination and places a
+red battle portal at a seeded random valid floor tile outside the arena and
+central map zone. Crossing
+its authoritative radius moves
+all living players on the level to spread, collision-safe positions inside the
+battle room, cancels actions already in progress, and starts a 20-second portal
+cooldown. The room remains part of the normal corridor graph, allowing retreat.
+
+Generation also creates green, blue, and yellow one-to-one link pairs. Each
+pair occupies two widely separated non-arena rooms. Link traversal is
+server-authoritative and bidirectional; the arrival endpoint remains locked
+for that player until they step outside its radius, preventing tick-to-tick
+ping-pong while preserving deliberate return travel.
+Portal coordinates intentionally bypass exploration filtering: they are global
+navigation landmarks. The player client clamps off-minimap portals to its map
+edge and allows nearby supernatural portal glow to render through walls.
 
 Offensive spells and throwing knives share a server projectile engine with
 straight-line substeps, energy loss over distance, and wall, unopened-cache,

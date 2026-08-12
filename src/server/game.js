@@ -52,6 +52,10 @@ export class Game {
       health: maxHealth,
       maxMana,
       mana: maxMana,
+      maxStamina: p.maxStamina,
+      stamina: p.maxStamina,
+      staminaRegenAt: 0,
+      staminaNoticeAt: 0,
       speed: Math.round(r.float(p.speed[0], p.speed[1]) * 10) / 10,
       manaRegenPerSec: Math.round(r.float(p.manaRegenPerSec[0], p.manaRegenPerSec[1]) * 10) / 10,
       inventory,
@@ -74,6 +78,8 @@ export class Game {
       explored: new Set(), // tile indices this player has seen
       newlyExplored: [],   // drained into the next snapshot
       visible: new Set(),  // recomputed periodically
+      portalInside: false,
+      linkPortalLock: null,
     };
     this.players.set(id, player);
     this.respawn(player, true);
@@ -111,6 +117,8 @@ export class Game {
     player.y = spot.y;
     player.health = player.maxHealth;
     player.mana = player.maxMana;
+    player.stamina = player.maxStamina;
+    player.staminaRegenAt = 0;
     player.alive = true;
     player.respawnAt = 0;
     player.move = { x: 0, y: 0 };
@@ -119,6 +127,8 @@ export class Game {
     player.swingUntil = 0;
     player.dodgeUntil = 0;
     player.invulnerableUntil = 0;
+    player.portalInside = false;
+    player.linkPortalLock = null;
     if (CONFIG.revealAll) this.revealEntireLevel(player);
     this.updateVision(player);
   }
@@ -193,8 +203,8 @@ export class Game {
 
   movePlayer(player, dt, now) {
     if (!player.alive) return;
-    // Swapping a weapon roots you in place — that is the whole point of it.
-    if (now < player.swapUntil) return;
+    const actionScale = this.movementScale(player, now);
+    if (actionScale <= 0) return;
 
     let { x: mx, y: my } = player.move;
     const len = Math.hypot(mx, my);
@@ -204,12 +214,92 @@ export class Game {
 
     const level = this.levels[player.level];
     const speedScale = now < player.slowUntil ? 0.55 : 1;
-    const step = player.speed * speedScale * dt;
+    const step = player.speed * speedScale * actionScale * dt;
     const nx = player.x + mx * step;
     const ny = player.y + my * step;
 
     if (!this.blocked(level, nx, player.y)) player.x = nx;
     if (!this.blocked(level, player.x, ny)) player.y = ny;
+  }
+
+  checkBattlePortal(player, now) {
+    const level = this.levels[player.level];
+    const portal = level.battlePortal;
+    if (!portal) return;
+    const inside = Math.hypot(player.x - portal.x, player.y - portal.y) <= CONFIG.combat.battlePortalRadius;
+    const crossedIn = inside && !player.portalInside;
+    player.portalInside = inside;
+    if (crossedIn && now >= portal.cooldownUntil) this.triggerBattlePortal(player, now);
+  }
+
+  triggerBattlePortal(trigger, now) {
+    const level = this.levels[trigger.level];
+    const portal = level.battlePortal;
+    if (!portal || !level.battleSpawns.length) return;
+    portal.cooldownUntil = now + CONFIG.combat.battlePortalCooldownMs;
+
+    const fighters = Array.from(this.players.values())
+      .filter((player) => player.alive && player.level === trigger.level);
+    const destinations = spreadPositions(level.battleSpawns, fighters.length);
+    const roomCenter = {
+      x: level.battleRoom.x + level.battleRoom.w / 2,
+      y: level.battleRoom.y + level.battleRoom.h / 2,
+    };
+
+    fighters.forEach((player, index) => {
+      const spot = destinations[index] || level.battleSpawns[0];
+      player.x = spot.x;
+      player.y = spot.y;
+      player.aim = Math.atan2(roomCenter.y - spot.y, roomCenter.x - spot.x);
+      player.move = { x: 0, y: 0 };
+      player.attackState = null;
+      player.castState = null;
+      player.swingUntil = 0;
+      player.swapUntil = 0;
+      player.dodgeUntil = 0;
+      player.portalInside = false;
+      this.emit(player, 'battleportal', { by: trigger.name, fighters: fighters.length });
+      if (!CONFIG.revealAll) this.updateVision(player);
+    });
+  }
+
+  checkLinkPortals(player) {
+    const level = this.levels[player.level];
+    const inside = level.linkPortals.find((portal) =>
+      Math.hypot(player.x - portal.x, player.y - portal.y) <= CONFIG.combat.linkPortalRadius);
+
+    // Arrival happens at the centre of the linked endpoint. Keep that endpoint
+    // locked until the player walks clear, otherwise the next tick would send
+    // them straight back without giving them control.
+    if (player.linkPortalLock) {
+      if (!inside) player.linkPortalLock = null;
+      return;
+    }
+    if (!inside) return;
+
+    const destination = level.linkPortals.find((portal) => portal.id === inside.toId);
+    if (!destination) return;
+    player.x = destination.x;
+    player.y = destination.y;
+    player.move = { x: 0, y: 0 };
+    player.attackState = null;
+    player.castState = null;
+    player.swingUntil = 0;
+    player.swapUntil = 0;
+    player.dodgeUntil = 0;
+    player.linkPortalLock = destination.id;
+    this.emit(player, 'linkportal', { color: inside.color });
+    if (!CONFIG.revealAll) this.updateVision(player);
+  }
+
+  movementScale(player, now) {
+    if (now < player.swapUntil || now < player.dodgeUntil) return 0;
+    const attack = player.attackState;
+    if (attack && now < attack.endsAt) {
+      return now < attack.resolveAt ? attack.windupMoveScale : attack.recoveryMoveScale;
+    }
+    if (player.castState && !player.castState.resolved) return CONFIG.combat.castMoveScale;
+    return 1;
   }
 
   // --- actions ----------------------------------------------------------
@@ -233,14 +323,15 @@ export class Game {
       case ACTION.ATTACK: return this.doHandAction(player, msg.hand, now);
       case ACTION.CAST: return this.doCast(player, now);
       case ACTION.PICKUP: return this.doPickup(player, now);
-      case ACTION.DROP: return this.doDrop(player, msg.uid);
+      case ACTION.DROP: return this.doDrop(player, msg.uid, now);
       case ACTION.EQUIP: return this.doEquip(player, msg.uid, now);
-      case ACTION.MOVE_SLOT: return this.doMoveSlot(player, msg.from, msg.to);
+      case ACTION.MOVE_SLOT: return this.doMoveSlot(player, msg.from, msg.to, now);
       default: return undefined;
     }
   }
 
   doEquip(player, uid, now) {
+    if (this.combatActionActive(player, now)) return;
     const item = this.findItem(player, uid);
     if (!item) return;
     if (item.kind === 'weapon' || item.kind === 'shield') {
@@ -264,7 +355,8 @@ export class Game {
     }
   }
 
-  doMoveSlot(player, from, to) {
+  doMoveSlot(player, from, to, now) {
+    if (this.combatActionActive(player, now)) return;
     if (!Number.isInteger(from) || !Number.isInteger(to)) return;
     if (from < 0 || to < 0 || from >= player.inventory.length || to >= player.inventory.length || from === to) return;
     const equipped = [player.leftHandUid, player.rightHandUid].filter(Boolean);
@@ -292,8 +384,29 @@ export class Game {
     if (item.kind === 'shield') return this.doDodge(player, hand, item, now);
   }
 
+  combatActionActive(player, now) {
+    return now < player.swapUntil ||
+      now < player.dodgeUntil ||
+      Boolean(player.attackState && now < player.attackState.endsAt) ||
+      Boolean(player.castState && !player.castState.resolved);
+  }
+
+  spendStamina(player, amount, now, name) {
+    if (player.stamina < amount) {
+      if (now >= player.staminaNoticeAt) {
+        this.emit(player, 'nostamina', { name, need: amount });
+        player.staminaNoticeAt = now + 500;
+      }
+      return false;
+    }
+    player.stamina -= amount;
+    player.staminaRegenAt = now + CONFIG.player.staminaRegenDelayMs;
+    return true;
+  }
+
   doAttack(player, hand, weapon, now) {
-    if (now < player.swapUntil || now < player.swingUntil) return;
+    if (this.combatActionActive(player, now) || now < player.swingUntil) return;
+    if (!this.spendStamina(player, weapon.staminaCost, now, weapon.name)) return;
     const left = this.handItem(player, 'left');
     const right = this.handItem(player, 'right');
     const dualWielding = left?.kind === 'weapon' && right?.kind === 'weapon';
@@ -313,6 +426,8 @@ export class Game {
       knockback: weapon.knockback || 0,
       throwable: !!weapon.throwable,
       projectileSpeed: weapon.projectileSpeed || 0,
+      windupMoveScale: weapon.windupMoveScale,
+      recoveryMoveScale: weapon.recoveryMoveScale,
       startedAt: now,
       resolveAt: now + weapon.windupMs,
       endsAt: now + weapon.swingMs,
@@ -364,7 +479,8 @@ export class Game {
   }
 
   doDodge(player, hand, shield, now) {
-    if (now < player.swapUntil || now < player.dodgeReadyAt) return;
+    if (this.combatActionActive(player, now) || now < player.dodgeReadyAt) return;
+    if (!this.spendStamina(player, shield.staminaCost, now, shield.name)) return;
     let dx = player.move.x;
     let dy = player.move.y;
     const len = Math.hypot(dx, dy);
@@ -388,7 +504,7 @@ export class Game {
   }
 
   doCast(player, now) {
-    if (now < player.castReadyAt || player.castState) return;
+    if (this.combatActionActive(player, now) || now < player.castReadyAt || player.castState) return;
     const spell = this.findItem(player, player.equippedSpellUid);
     if (!spell) return;
     if (player.mana < spell.manaCost) {
@@ -612,7 +728,8 @@ export class Game {
     if (item.attr === 'maxMana') player.mana = Math.min(player.mana, player.maxMana);
   }
 
-  doDrop(player, uid) {
+  doDrop(player, uid, now) {
+    if (this.combatActionActive(player, now)) return;
     const i = player.inventory.findIndex((it) => it && it.uid === uid);
     if (i === -1) return;
     const item = player.inventory[i];
@@ -675,7 +792,12 @@ export class Game {
       if (player.attackState && now >= player.attackState.endsAt) player.attackState = null;
       if (player.castState?.resolved) player.castState = null;
       this.movePlayer(player, dt, now);
+      this.checkBattlePortal(player, now);
+      this.checkLinkPortals(player);
       player.mana = Math.min(player.maxMana, player.mana + player.manaRegenPerSec * dt);
+      if (now >= player.staminaRegenAt && !this.combatActionActive(player, now)) {
+        player.stamina = Math.min(player.maxStamina, player.stamina + CONFIG.player.staminaRegenPerSec * dt);
+      }
 
       // Vision is the expensive part; 5Hz is plenty for map reveal.
       if (!CONFIG.revealAll && this.tickCount % 4 === 0) this.updateVision(player);
@@ -702,6 +824,7 @@ export class Game {
 
   snapshotFor(player) {
     const level = this.levels[player.level];
+    const now = Date.now();
 
     const others = [];
     for (const other of this.players.values()) {
@@ -730,6 +853,10 @@ export class Game {
     const projectiles = this.projectiles
       .filter((projectile) => projectile.level === player.level && this.canSee(player, projectile.x, projectile.y))
       .map(publicProjectile);
+    // Portals are global navigation landmarks. Every player receives them even
+    // when fog-of-war is enabled; geometry and other entities remain filtered.
+    const battlePortal = level.battlePortal ? publicBattlePortal(level.battlePortal, now) : null;
+    const linkPortals = level.linkPortals.map(publicLinkPortal);
 
     // A player only needs sources close enough to become audible. Once the
     // browser learns a point it retains it, while the server remains the
@@ -738,7 +865,6 @@ export class Game {
       .filter((p) => Math.hypot(p.x - player.x, p.y - player.y) <= AMBIENT_MAX_DIST + 2)
       .map(publicSoundPoint);
 
-    const now = Date.now();
     const snapshot = {
       t: now,
       self: {
@@ -750,6 +876,8 @@ export class Game {
         maxHealth: player.maxHealth,
         mana: Math.round(player.mana),
         maxMana: player.maxMana,
+        stamina: Math.round(player.stamina),
+        maxStamina: player.maxStamina,
         speed: player.speed,
         manaRegenPerSec: player.manaRegenPerSec,
         alive: player.alive,
@@ -771,6 +899,8 @@ export class Game {
       caches,
       drops,
       projectiles,
+      battlePortal,
+      linkPortals,
       soundPoints,
       // flat [tileIndex, tileValue, ...] of everything revealed since last frame
       reveal: player.newlyExplored,
@@ -828,7 +958,10 @@ export class Game {
       .filter((projectile) => projectile.level === levelIndex)
       .map(publicProjectile);
 
-    return { t: Date.now(), level: levelIndex, players, caches, drops, projectiles };
+    const now = Date.now();
+    const battlePortal = level.battlePortal ? publicBattlePortal(level.battlePortal, now) : null;
+    const linkPortals = level.linkPortals.map(publicLinkPortal);
+    return { t: now, level: levelIndex, players, caches, drops, projectiles, battlePortal, linkPortals };
   }
 }
 
@@ -844,10 +977,12 @@ function publicItem(item) {
   const out = { uid: item.uid, kind: item.kind, name: item.name };
   if (item.kind === 'weapon') Object.assign(out, {
     damage: item.damage, range: item.range, windupMs: item.windupMs,
-    swingMs: item.swingMs, attackStyle: item.attackStyle, throwable: !!item.throwable,
+    swingMs: item.swingMs, staminaCost: item.staminaCost,
+    attackStyle: item.attackStyle, throwable: !!item.throwable,
   });
   if (item.kind === 'shield') Object.assign(out, {
     dodgeDistance: item.dodgeDistance, cooldownMs: item.cooldownMs,
+    staminaCost: item.staminaCost,
   });
   if (item.kind === 'spell') Object.assign(out, {
     damage: item.damage, heal: item.heal, manaCost: item.manaCost,
@@ -885,6 +1020,36 @@ function publicProjectile(projectile) {
     style: projectile.style,
     energy: round2(clamp(1 - (projectile.travelled / projectile.range) * 0.6, 0.4, 1)),
   };
+}
+
+function publicBattlePortal(portal, now) {
+  return {
+    id: portal.id,
+    x: round2(portal.x),
+    y: round2(portal.y),
+    active: now >= portal.cooldownUntil,
+    cooldownRemaining: Math.max(0, portal.cooldownUntil - now),
+  };
+}
+
+function publicLinkPortal(portal) {
+  return { id: portal.id, pairId: portal.pairId, color: portal.color, x: round2(portal.x), y: round2(portal.y) };
+}
+
+function spreadPositions(candidates, count) {
+  if (count <= 0 || !candidates.length) return [];
+  const chosen = [candidates[0]];
+  const remaining = candidates.slice(1);
+  while (chosen.length < count && remaining.length) {
+    let bestIndex = 0;
+    let bestDistance = -1;
+    for (let i = 0; i < remaining.length; i++) {
+      const nearest = Math.min(...chosen.map((spot) => Math.hypot(remaining[i].x - spot.x, remaining[i].y - spot.y)));
+      if (nearest > bestDistance) { bestDistance = nearest; bestIndex = i; }
+    }
+    chosen.push(remaining.splice(bestIndex, 1)[0]);
+  }
+  return chosen;
 }
 
 function publicSoundPoint(point) {

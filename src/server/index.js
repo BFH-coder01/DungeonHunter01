@@ -10,11 +10,13 @@ import { WebSocketServer } from 'ws';
 
 import { MSG, TICK_MS } from '../shared/constants.js';
 import { Game } from './game.js';
+import { consumeRateLimit } from './rate-limit.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', '..', 'public');
 const SHARED_DIR = path.join(__dirname, '..', 'shared');
 const PORT = Number(process.env.PORT) || 8080;
+const MAX_MESSAGE_BYTES = 8192;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -72,8 +74,12 @@ let nextId = 1;
 wss.on('connection', (ws) => {
   const id = `p${nextId++}`;
   let player = null;
+  const rateLimits = Object.create(null);
 
   ws.on('message', (raw) => {
+    const receivedAt = Date.now();
+    if (raw.length > MAX_MESSAGE_BYTES) return;
+    if (!consumeRateLimit(rateLimits, 'all', 60, 30, receivedAt)) return;
     let msg;
     try {
       msg = JSON.parse(raw);
@@ -102,6 +108,7 @@ wss.on('connection', (ws) => {
     if (!player) return;
 
     if (msg.type === MSG.INPUT) {
+      if (!consumeRateLimit(rateLimits, 'input', 30, 10, receivedAt)) return;
       player.move.x = clampUnit(msg.mx);
       player.move.y = clampUnit(msg.my);
       if (Number.isFinite(msg.aim)) player.aim = msg.aim;
@@ -109,7 +116,8 @@ wss.on('connection', (ws) => {
     }
 
     if (msg.type === MSG.ACTION) {
-      game.handleAction(player, msg, Date.now());
+      if (!consumeRateLimit(rateLimits, 'action', 10, 5, receivedAt)) return;
+      game.handleAction(player, msg, receivedAt);
     }
   });
 

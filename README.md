@@ -114,6 +114,28 @@ being bundled. There is no frontend build step.
   loadout, and right-click to drop. A shield activates a directional dodge;
   two equipped weapons make the left weapon an off-hand attack at half damage.
 
+Weapons and shield dodges consume stamina. Stamina regenerates after a short
+delay once the current action finishes. Only one attack, cast, dodge, or weapon
+swap can be active at a time, and each weapon slows movement by its own amount
+during wind-up and recovery. The server also rate-limits input and action
+messages per connection so key spam cannot flood the simulation.
+
+Each generated level also contains one animated red battle portal at a seeded
+random valid floor tile in the map's outer area, outside the battle destination
+and central zone. Crossing it
+pulls every living player on that level into spread positions inside the same
+large room. The destination room keeps its ordinary corridor exits, so the
+group can fight or flee. The portal then cools down for 20 seconds before it
+can gather the group again.
+
+Three additional portal networks link distant parts of the map: one green
+pair, one blue pair, and one yellow pair. Each pair is one-to-one and
+bidirectional. Enter either endpoint to arrive at its matching color; step out
+of the arrival portal and enter it again to return to the starting endpoint.
+All portal locations are sent to every player as global navigation landmarks.
+Distant portals clamp to the edge of the minimap as directional markers, and
+nearby portal glow remains visible through walls.
+
 The DungeonMaster view has no controls — it's a read-only overview. Just open
 `/dm.html` and watch.
 
@@ -145,15 +167,17 @@ when they stop.
   deltas (their input state isn't known to us, only their position); for
   yourself it's read directly from held movement keys.
 
-**Ambient points** — 12 authoritative points are placed on floor tiles when
-each seeded dungeon level is generated. Their locations, 1-3 assigned clips,
+**Ambient points** — authoritative points scale with dungeon dimensions, with
+a 12-point minimum and 36 points on the current 192×132
+test map. Farthest-point placement keeps coverage even rather than clustered.
+Their locations, 1-3 assigned clips,
 and individual/group mode are therefore identical for every participant and
 visible in full on the DungeonMaster map. A player receives a point only when
 they approach its audible radius. Each clip runs on its own timer (the interval
 scales with the clip duration so a 38s clip does not retrigger every 15s).
 **Individual** clips have nearby within-tile source positions; **group** clips
 share one exact-position panner. Web Audio applies directional panning and
-linear distance attenuation out to ~10 tiles. Ambient radius, reference
+linear distance attenuation out to ~22 tiles. Ambient radius, reference
 distance, and gain are configured centrally in `src/shared/sounds.js` without
 changing footstep volume.
 

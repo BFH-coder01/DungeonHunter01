@@ -130,11 +130,13 @@ recovery. Shields perform a collision-checked directional dash with brief
 invulnerability and cooldown. Spell selection is immediate, but casting has a
 visible windup.
 
-Weapon attacks, shield dodges, spell casts, and sustained sprinting consume
-server-owned stamina. Movement held for 650 ms becomes a 1.4× sprint and drains
-20 stamina per second; shorter movement taps remain normal walking. Exhaustion
-locks sprint until 20 stamina recovers, while walking permits regeneration once
-the normal delay and any active combat action have ended.
+Weapon attacks, shield dodges, spell casts, and movement consume server-owned
+stamina. Every successful movement tick uses the 1.4× movement scale and drains
+14 stamina per second. Zero stamina prevents movement. Regeneration is 10 per
+second and begins one second after movement intent returns to zero and any
+active combat action has ended. Charging authoritative movement cycles rather
+than client key-repeat events keeps tap-versus-hold behavior consistent across
+keyboard drivers and prevents clients from choosing their own drain rate.
 Combat actions are mutually exclusive with no queued follow-up action. Weapon
 definitions provide separate wind-up and recovery movement scales, while spell
 wind-up uses a shared movement scale. Per-connection token buckets bound total,
@@ -222,6 +224,15 @@ database, or persistent game identity/state. Player and spectator protocol paths
 are separated, but that is not access control. Do not expose the Node server
 directly to the public internet. Audio licensing also requires verification
 before public distribution.
+
+The player sends movement intent on an independent 20 Hz timer plus immediate
+press/release edges, so a slow render frame cannot delay control messages. The
+first-person camera predicts 75 ms ahead from current intent and reconciles
+toward each authoritative snapshot. Static cache/drop collections are included
+only when their level revision or exploration visibility changes. The DM map
+geometry is pre-rendered to an offscreen canvas after load/resize; animation
+frames redraw that cached layer plus dynamic entities instead of issuing more
+than 25,000 tile strokes every frame.
 
 ## Testing and evolution
 

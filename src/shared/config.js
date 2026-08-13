@@ -36,12 +36,10 @@ export const CONFIG = {
     speed: [3.2, 5.4], // tiles per second
     manaRegenPerSec: [2.5, 6.0],
     maxStamina: 100,
-    staminaRegenPerSec: 24,
-    staminaRegenDelayMs: 700,
-    sprintHoldMs: 650,
-    sprintSpeedScale: 1.4,
-    sprintStaminaPerSec: 20,
-    sprintResumeStamina: 20,
+    staminaRegenPerSec: 10,
+    staminaRegenDelayMs: 1_000,
+    movementSpeedScale: 1.4,
+    movementStaminaPerSec: 14,
     inventorySize: 8,
     inventorySideSize: 4,
     // Swapping a held item is deliberate: you stop, you swap, you move on.

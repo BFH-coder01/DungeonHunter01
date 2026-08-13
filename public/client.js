@@ -1,4 +1,4 @@
-import { TILE, MSG, ACTION, SIGHT_RADIUS } from '/shared/constants.js';
+import { TILE, MSG, ACTION, SIGHT_RADIUS, PLAYER_RADIUS } from '/shared/constants.js';
 import { createAmbientAudio } from '/audio.js';
 
 // ---------------------------------------------------------------------
@@ -15,6 +15,7 @@ let drops = new Map();
 let projectiles = new Map();
 let battlePortal = null;
 let linkPortals = new Map();
+let movementSpeedScale = 1;
 
 const audio = createAmbientAudio();
 const prevOthersPos = new Map(); // player id -> {x,y}, used to detect movement for footstep audio
@@ -53,7 +54,11 @@ function doJoin() {
     ws.send(JSON.stringify({ type: MSG.JOIN, name }));
   });
   ws.addEventListener('message', onMessage);
-  ws.addEventListener('close', () => log('Disconnected from server.', 'bad'));
+  ws.addEventListener('close', () => {
+    if (inputTimer) clearInterval(inputTimer);
+    inputTimer = null;
+    log('Disconnected from server.', 'bad');
+  });
   joinBtn.disabled = true;
   joinBtn.textContent = 'Connecting…';
 }
@@ -70,9 +75,12 @@ function onWelcome(msg) {
   width = msg.width;
   height = msg.height;
   map = new Int8Array(width * height).fill(-1);
+  movementSpeedScale = msg.movementSpeedScale || 1;
   joinOverlay.classList.add('hidden');
   hud.classList.remove('hidden');
   log(`Dungeon seed ${msg.seed} — level ${msg.level + 1}/${msg.totalLevels}${msg.revealAll ? ' (full map test mode)' : ''}`, 'good');
+  if (inputTimer) clearInterval(inputTimer);
+  inputTimer = setInterval(() => pumpInput(performance.now()), 50);
   requestAnimationFrame(loop);
 }
 
@@ -85,8 +93,8 @@ function onState(msg) {
   if (!viewAngleInit) { viewAngle = self.aim; viewAngleInit = true; }
 
   others = new Map(msg.others.map((o) => [o.id, o]));
-  caches = new Map(msg.caches.map((c) => [c.id, c]));
-  drops = new Map(msg.drops.map((d) => [d.uid, d]));
+  if (msg.caches) caches = new Map(msg.caches.map((c) => [c.id, c]));
+  if (msg.drops) drops = new Map(msg.drops.map((d) => [d.uid, d]));
   projectiles = new Map((msg.projectiles || []).map((p) => [p.id, p]));
   battlePortal = msg.battlePortal || null;
   linkPortals = new Map((msg.linkPortals || []).map((p) => [p.id, p]));
@@ -172,9 +180,12 @@ function applyKeyTurn(dt) {
 }
 
 const keys = new Set();
+const MOVEMENT_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown']);
 window.addEventListener('keydown', (e) => {
   if (document.activeElement === nameInput) return;
-  keys.add(e.key.toLowerCase());
+  const key = e.key.toLowerCase();
+  keys.add(key);
+  if (!e.repeat && MOVEMENT_KEYS.has(key)) pumpInput(performance.now(), true);
   if (!e.repeat && (e.code === 'KeyZ' || e.code === 'KeyM')) {
     sendAction(ACTION.ATTACK, { hand: e.code === 'KeyZ' ? 'left' : 'right' });
     e.preventDefault();
@@ -184,7 +195,15 @@ window.addEventListener('keydown', (e) => {
   const n = Number(e.key);
   if (n >= 1 && n <= 8) equipSlot(n - 1);
 });
-window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+window.addEventListener('keyup', (e) => {
+  const key = e.key.toLowerCase();
+  keys.delete(key);
+  if (MOVEMENT_KEYS.has(key)) pumpInput(performance.now(), true);
+});
+window.addEventListener('blur', () => {
+  keys.clear();
+  pumpInput(performance.now(), true);
+});
 
 function sendAction(action, extra) {
   if (!ws || ws.readyState !== ws.OPEN) return;
@@ -192,11 +211,9 @@ function sendAction(action, extra) {
 }
 
 let lastInputSent = 0;
-function pumpInput(now) {
-  if (!ws || ws.readyState !== ws.OPEN || !self) return;
-  if (now - lastInputSent < 50) return;
-  lastInputSent = now;
+let inputTimer = null;
 
+function movementVector() {
   let fb = 0, lr = 0;
   if (keys.has('w') || keys.has('arrowup')) fb += 1;
   if (keys.has('s') || keys.has('arrowdown')) fb -= 1;
@@ -212,7 +229,14 @@ function pumpInput(now) {
     const len = Math.hypot(mx, my);
     if (len > 0) { mx /= len; my /= len; }
   }
+  return { mx, my };
+}
 
+function pumpInput(now, force = false) {
+  if (!ws || ws.readyState !== ws.OPEN || !self) return;
+  if (!force && now - lastInputSent < 50) return;
+  lastInputSent = now;
+  const { mx, my } = movementVector();
   ws.send(JSON.stringify({ type: MSG.INPUT, mx, my, aim: viewAngle }));
 }
 
@@ -244,7 +268,7 @@ function updateHud() {
   mpText.textContent = `MP ${self.mana}/${self.maxMana}`;
   staminaFill.style.transform = `scaleX(${Math.max(0, self.stamina / self.maxStamina)})`;
   staminaText.textContent = `STA ${self.stamina}/${self.maxStamina}`;
-  spdText.textContent = `${self.speed.toFixed(1)}${self.sprinting ? ' RUN' : ''}`;
+  spdText.textContent = `${self.speed.toFixed(1)}${self.moving ? ' RUN' : ''}`;
   lvlText.textContent = self.level + 1;
   kdText.textContent = `${self.kills}/${self.deaths}`;
 
@@ -490,13 +514,33 @@ const FOG_BG = { r: 3, g: 5, b: 7 }; // matches the old flat ceiling/floor fill
 
 let renderX = null, renderY = null;
 let lastFrameT = performance.now();
+const CLIENT_PREDICTION_SECONDS = 0.075;
 
 function updateSmoothing(dt) {
   if (!self) return;
   if (renderX === null) { renderX = self.x; renderY = self.y; return; }
+  let targetX = self.x;
+  let targetY = self.y;
+  const { mx, my } = movementVector();
+  let actionScale = 1;
+  if (self.swapRemaining > 0 || self.dodgeRemaining > 0) actionScale = 0;
+  else if (self.cast) actionScale = 0.4;
+  else if (self.attack) actionScale = 0.7;
+  if (self.alive && self.stamina > 0 && actionScale > 0 && Math.hypot(mx, my) > 0.001) {
+    const lead = self.speed * movementSpeedScale * actionScale * CLIENT_PREDICTION_SECONDS;
+    const predictedX = targetX + mx * lead;
+    const predictedY = targetY + my * lead;
+    if (!clientPositionBlocked(predictedX, targetY)) targetX = predictedX;
+    if (!clientPositionBlocked(targetX, predictedY)) targetY = predictedY;
+  }
+  if (Math.hypot(targetX - renderX, targetY - renderY) > 1.25) {
+    renderX = targetX;
+    renderY = targetY;
+    return;
+  }
   const k = Math.min(1, dt * 14);
-  renderX += (self.x - renderX) * k;
-  renderY += (self.y - renderY) * k;
+  renderX += (targetX - renderX) * k;
+  renderY += (targetY - renderY) * k;
 }
 
 function tileBlocked(tx, ty) {
@@ -700,6 +744,14 @@ function drawBillboards(horizon, floorScale, w, h) {
     else if (item.kind === 'battlePortal') drawBattlePortalGlyph(item.ref, sx, feetY, fullH);
     else drawLinkPortalGlyph(item.ref, sx, feetY, fullH);
   }
+}
+
+function clientPositionBlocked(x, y) {
+  const r = PLAYER_RADIUS;
+  return tileBlocked(Math.floor(x - r), Math.floor(y - r)) ||
+    tileBlocked(Math.floor(x + r), Math.floor(y - r)) ||
+    tileBlocked(Math.floor(x - r), Math.floor(y + r)) ||
+    tileBlocked(Math.floor(x + r), Math.floor(y + r));
 }
 
 function drawBattlePortalGlyph(portal, sx, feetY, fullH) {
@@ -1251,7 +1303,6 @@ function loop(now) {
   lastFrameT = now;
 
   applyKeyTurn(dt);
-  pumpInput(now);
   updateSmoothing(dt);
 
   ctx.fillStyle = '#04070a';
@@ -1263,10 +1314,7 @@ function loop(now) {
     drawFirstPersonLoadout();
     drawMinimap();
     audio.updateListener(renderX, renderY, viewAngle);
-    const selfMoving = self.alive && (
-      keys.has('w') || keys.has('s') || keys.has('a') || keys.has('d') ||
-      keys.has('arrowup') || keys.has('arrowdown')
-    );
+    const selfMoving = self.alive && self.moving;
     audio.setMoving('self', selfMoving, renderX, renderY, true);
   }
 

@@ -91,6 +91,7 @@ wss.on('connection', (ws) => {
       if (player || ws.isSpectator) return;
       ws.isSpectator = true;
       ws.dmLevel = 0;
+      ws.entityRevision = -1;
       send(ws, { type: MSG.WELCOME, dm: true, ...game.dmWelcome(ws.dmLevel) });
       console.log('[spectate] DungeonMaster view connected');
       return;
@@ -100,6 +101,7 @@ wss.on('connection', (ws) => {
       if (player || ws.isSpectator) return;
       player = game.addPlayer(id, msg.name);
       ws.player = player;
+      ws.entityRevision = -1;
       send(ws, { type: MSG.WELCOME, ...game.welcomeFor(player) });
       console.log(`[join] ${player.name} (${id}) — ${game.players.size} online`);
       return;
@@ -151,11 +153,17 @@ setInterval(() => {
 
   for (const ws of wss.clients) {
     if (ws.isSpectator) {
-      send(ws, { type: MSG.STATE, dm: true, ...game.dmSnapshot(ws.dmLevel) });
+      const revision = game.entityRevision(ws.dmLevel);
+      const includeEntities = ws.entityRevision !== revision;
+      send(ws, { type: MSG.STATE, dm: true, ...game.dmSnapshot(ws.dmLevel, includeEntities) });
+      ws.entityRevision = revision;
       continue;
     }
     if (!ws.player || !game.players.has(ws.player.id)) continue;
-    send(ws, { type: MSG.STATE, ...game.snapshotFor(ws.player) });
+    const revision = game.entityRevision(ws.player.level);
+    const includeEntities = ws.entityRevision !== revision || ws.player.newlyExplored.length > 0;
+    send(ws, { type: MSG.STATE, ...game.snapshotFor(ws.player, includeEntities) });
+    ws.entityRevision = revision;
   }
   game.clearEvents();
 }, TICK_MS);

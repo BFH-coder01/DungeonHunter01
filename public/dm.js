@@ -21,6 +21,8 @@ let soundPoints = [];
 let projectiles = [];
 let battlePortal = null;
 let linkPortals = [];
+let staticMapCanvas = null;
+let staticMapKey = '';
 
 // Must match FOOTSTEP_MAX_DIST in public/audio.js — how far another
 // player's footsteps are audible, used to draw the "who's making noise"
@@ -32,6 +34,7 @@ const movingIds = new Set();
 function resize() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
+  staticMapKey = '';
 }
 window.addEventListener('resize', resize);
 resize();
@@ -60,8 +63,8 @@ function onWelcome(msg) {
 function onState(msg) {
   level = msg.level;
   players = msg.players;
-  caches = msg.caches;
-  drops = msg.drops;
+  if (msg.caches) caches = msg.caches;
+  if (msg.drops) drops = msg.drops;
   projectiles = msg.projectiles || [];
   battlePortal = msg.battlePortal || null;
   linkPortals = msg.linkPortals || [];
@@ -120,7 +123,7 @@ function computeFit() {
   return { tile, offX, offY };
 }
 
-function drawMap(fit) {
+function drawMap(fit, targetCtx = ctx) {
   const { tile, offX, offY } = fit;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -128,20 +131,20 @@ function drawMap(fit) {
       const sx = offX + x * tile;
       const sy = offY + y * tile;
       if (v === TILE.WALL) {
-        ctx.strokeStyle = '#14612f';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(sx + 0.5, sy + 0.5, tile - 1, tile - 1);
+        targetCtx.strokeStyle = '#14612f';
+        targetCtx.lineWidth = 1;
+        targetCtx.strokeRect(sx + 0.5, sy + 0.5, tile - 1, tile - 1);
       } else {
-        ctx.strokeStyle = 'rgba(20, 97, 47, 0.3)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(sx + 0.5, sy + 0.5, tile - 1, tile - 1);
+        targetCtx.strokeStyle = 'rgba(20, 97, 47, 0.3)';
+        targetCtx.lineWidth = 1;
+        targetCtx.strokeRect(sx + 0.5, sy + 0.5, tile - 1, tile - 1);
         if (v === TILE.STAIRS_DOWN || v === TILE.STAIRS_UP) {
-          ctx.strokeStyle = '#ffcf4d';
+          targetCtx.strokeStyle = '#ffcf4d';
           const mx = sx + tile / 2, my = sy + tile / 2, r = tile * 0.32;
-          ctx.beginPath();
-          ctx.moveTo(mx, my - r); ctx.lineTo(mx + r, my); ctx.lineTo(mx, my + r); ctx.lineTo(mx - r, my);
-          ctx.closePath();
-          ctx.stroke();
+          targetCtx.beginPath();
+          targetCtx.moveTo(mx, my - r); targetCtx.lineTo(mx + r, my); targetCtx.lineTo(mx, my + r); targetCtx.lineTo(mx - r, my);
+          targetCtx.closePath();
+          targetCtx.stroke();
         }
       }
     }
@@ -180,6 +183,18 @@ function drawProjectiles(fit) {
     ctx.arc(sx, sy, Math.max(2, tile * 0.18 * p.energy), 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+function staticMapLayer(fit) {
+  const key = `${canvas.width}:${canvas.height}:${width}:${height}:${fit.tile}:${fit.offX}:${fit.offY}`;
+  if (staticMapCanvas && staticMapKey === key) return staticMapCanvas;
+  staticMapCanvas = document.createElement('canvas');
+  staticMapCanvas.width = canvas.width;
+  staticMapCanvas.height = canvas.height;
+  const staticCtx = staticMapCanvas.getContext('2d');
+  drawMap(fit, staticCtx);
+  staticMapKey = key;
+  return staticMapCanvas;
 }
 
 function drawBattlePortal(fit) {
@@ -305,7 +320,7 @@ function loop() {
 
   if (width && height) {
     const fit = computeFit();
-    drawMap(fit);
+    ctx.drawImage(staticMapLayer(fit), 0, 0);
     drawSoundPoints(fit);
     drawCaches(fit);
     drawDrops(fit);

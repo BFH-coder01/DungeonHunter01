@@ -19,11 +19,23 @@ export class Game {
     this.totalLevels = totalLevels;
     this.players = new Map();
     this.groundItems = new Map(); // levelIndex -> array of { uid, x, y, item }
+    this.entityRevisions = new Map(); // cache/drop changes, sent only when revised
     this.projectiles = [];
     this.nextProjectileId = 1;
     this.events = []; // drained every tick, fanned out to clients
     this.tickCount = 0;
-    for (let i = 0; i < levels.length; i++) this.groundItems.set(i, []);
+    for (let i = 0; i < levels.length; i++) {
+      this.groundItems.set(i, []);
+      this.entityRevisions.set(i, 0);
+    }
+  }
+
+  entityRevision(levelIndex) {
+    return this.entityRevisions.get(levelIndex) || 0;
+  }
+
+  markEntitiesChanged(levelIndex) {
+    this.entityRevisions.set(levelIndex, this.entityRevision(levelIndex) + 1);
   }
 
   // --- players ----------------------------------------------------------
@@ -56,9 +68,7 @@ export class Game {
       stamina: p.maxStamina,
       staminaRegenAt: 0,
       staminaNoticeAt: 0,
-      moveStartedAt: null,
-      sprintLocked: false,
-      sprinting: false,
+      moving: false,
       speed: Math.round(r.float(p.speed[0], p.speed[1]) * 10) / 10,
       manaRegenPerSec: Math.round(r.float(p.manaRegenPerSec[0], p.manaRegenPerSec[1]) * 10) / 10,
       inventory,
@@ -129,9 +139,7 @@ export class Game {
     player.mana = player.maxMana;
     player.stamina = player.maxStamina;
     player.staminaRegenAt = 0;
-    player.moveStartedAt = null;
-    player.sprintLocked = false;
-    player.sprinting = false;
+    player.moving = false;
     player.alive = true;
     player.respawnAt = 0;
     player.move = { x: 0, y: 0 };
@@ -221,37 +229,30 @@ export class Game {
     let { x: mx, y: my } = player.move;
     const len = Math.hypot(mx, my);
     if (len < 0.001) {
-      player.moveStartedAt = null;
-      player.sprinting = false;
+      player.moving = false;
       return;
     }
-    if (player.moveStartedAt === null) player.moveStartedAt = now;
-    if (player.sprintLocked && player.stamina >= CONFIG.player.sprintResumeStamina) {
-      player.sprintLocked = false;
-    }
-    const heldLongEnough = now - player.moveStartedAt >= CONFIG.player.sprintHoldMs;
-    player.sprinting = actionScale > 0 && heldLongEnough && !player.sprintLocked && player.stamina > 0;
-    if (player.sprinting) {
-      player.stamina = Math.max(0, player.stamina - CONFIG.player.sprintStaminaPerSec * dt);
-      player.staminaRegenAt = now + CONFIG.player.staminaRegenDelayMs;
-      if (player.stamina <= 0) {
-        player.sprintLocked = true;
-        player.sprinting = false;
-      }
-    }
-    if (actionScale <= 0) return;
+    const canMove = actionScale > 0 && player.stamina > 0;
+    player.moving = false;
+    player.staminaRegenAt = now + CONFIG.player.staminaRegenDelayMs;
+    if (!canMove) return;
     mx /= len;
     my /= len;
 
     const level = this.levels[player.level];
     const speedScale = now < player.slowUntil ? 0.55 : 1;
-    const sprintScale = player.sprinting ? CONFIG.player.sprintSpeedScale : 1;
-    const step = player.speed * speedScale * actionScale * sprintScale * dt;
+    const step = player.speed * speedScale * actionScale * CONFIG.player.movementSpeedScale * dt;
     const nx = player.x + mx * step;
     const ny = player.y + my * step;
 
+    const beforeX = player.x;
+    const beforeY = player.y;
     if (!this.blocked(level, nx, player.y)) player.x = nx;
     if (!this.blocked(level, player.x, ny)) player.y = ny;
+    player.moving = player.x !== beforeX || player.y !== beforeY;
+    if (player.moving) {
+      player.stamina = Math.max(0, player.stamina - CONFIG.player.movementStaminaPerSec * dt);
+    }
   }
 
   checkBattlePortal(player, now) {
@@ -284,8 +285,7 @@ export class Game {
       player.y = spot.y;
       player.aim = Math.atan2(roomCenter.y - spot.y, roomCenter.x - spot.x);
       player.move = { x: 0, y: 0 };
-      player.moveStartedAt = null;
-      player.sprinting = false;
+      player.moving = false;
       player.attackState = null;
       player.castState = null;
       player.swingUntil = 0;
@@ -316,8 +316,7 @@ export class Game {
     player.x = destination.x;
     player.y = destination.y;
     player.move = { x: 0, y: 0 };
-    player.moveStartedAt = null;
-    player.sprinting = false;
+    player.moving = false;
     player.attackState = null;
     player.castState = null;
     player.swingUntil = 0;
@@ -665,6 +664,7 @@ export class Game {
             y: projectile.y,
             item: projectile.item,
           });
+          this.markEntitiesChanged(projectile.level);
         }
       }
     }
@@ -802,11 +802,12 @@ export class Game {
       }
     }
 
-    for (const pile of this.groundItems.values()) {
+    for (const [levelIndex, pile] of this.groundItems) {
       for (let i = pile.length - 1; i >= 0; i--) {
         const item = pile[i].item;
         if (!item?.expiresAt || now < item.expiresAt) continue;
         pile.splice(i, 1);
+        this.markEntitiesChanged(levelIndex);
         this.completeReward(item, now);
       }
     }
@@ -857,6 +858,7 @@ export class Game {
         cache.respawnAt = 0;
         cache.rewardUid = null;
         this.broadcast('cacheregen', { level: levelIndex });
+        this.markEntitiesChanged(levelIndex);
       }
     }
   }
@@ -880,6 +882,7 @@ export class Game {
       this.bindCacheReward(item, cache, player.level, now);
       this.giveItem(player, item, now);
       if (item.kind === 'boon') this.completeReward(item, now);
+      this.markEntitiesChanged(player.level);
       return;
     }
     const pile = this.groundItems.get(player.level);
@@ -888,6 +891,7 @@ export class Game {
       if (Math.hypot(drop.x - player.x, drop.y - player.y) > 0.9) continue;
       if (!this.giveItem(player, drop.item, now)) return;
       pile.splice(i, 1);
+      this.markEntitiesChanged(player.level);
       return;
     }
   }
@@ -932,6 +936,7 @@ export class Game {
     if (player.rightHandUid === uid) player.rightHandUid = null;
     if (player.equippedSpellUid === uid) player.equippedSpellUid = null;
     this.groundItems.get(player.level).push({ uid: item.uid, x: player.x, y: player.y, item });
+    this.markEntitiesChanged(player.level);
     this.emit(player, 'drop', { name: item.name });
   }
 
@@ -946,6 +951,7 @@ export class Game {
         item,
       });
     }
+    if (player.inventory.some(Boolean)) this.markEntitiesChanged(player.level);
     player.inventory = Array(CONFIG.player.inventorySize).fill(null);
     player.leftHandUid = null;
     player.rightHandUid = null;
@@ -991,7 +997,8 @@ export class Game {
       this.checkBattlePortal(player, now);
       this.checkLinkPortals(player);
       player.mana = Math.min(player.maxMana, player.mana + player.manaRegenPerSec * dt);
-      if (now >= player.staminaRegenAt && !this.combatActionActive(player, now)) {
+      if (!player.moving && Math.hypot(player.move.x, player.move.y) < 0.001 &&
+          now >= player.staminaRegenAt && !this.combatActionActive(player, now)) {
         player.stamina = Math.min(player.maxStamina, player.stamina + CONFIG.player.staminaRegenPerSec * dt);
       }
 
@@ -1015,10 +1022,11 @@ export class Game {
       height: level.height,
       inventorySize: CONFIG.player.inventorySize,
       inventorySideSize: CONFIG.player.inventorySideSize,
+      movementSpeedScale: CONFIG.player.movementSpeedScale,
     };
   }
 
-  snapshotFor(player) {
+  snapshotFor(player, includeEntities = true) {
     const level = this.levels[player.level];
     const now = Date.now();
 
@@ -1039,13 +1047,13 @@ export class Game {
       });
     }
 
-    const caches = level.caches
+    const caches = includeEntities ? level.caches
       .filter((c) => !c.looted && player.explored.has(tileIndex(level, c.x, c.y)))
-      .map((c) => ({ id: c.id, x: round2(c.x), y: round2(c.y) }));
+      .map((c) => ({ id: c.id, x: round2(c.x), y: round2(c.y) })) : undefined;
 
-    const drops = this.groundItems.get(player.level)
+    const drops = includeEntities ? this.groundItems.get(player.level)
       .filter((d) => player.explored.has(tileIndex(level, d.x, d.y)))
-      .map((d) => ({ uid: d.uid, x: round2(d.x), y: round2(d.y), name: d.item.name, kind: d.item.kind }));
+      .map((d) => ({ uid: d.uid, x: round2(d.x), y: round2(d.y), name: d.item.name, kind: d.item.kind })) : undefined;
     const projectiles = this.projectiles
       .filter((projectile) => projectile.level === player.level && this.canSee(player, projectile.x, projectile.y))
       .map(publicProjectile);
@@ -1074,7 +1082,7 @@ export class Game {
         maxMana: player.maxMana,
         stamina: Math.round(player.stamina),
         maxStamina: player.maxStamina,
-        sprinting: player.sprinting,
+        moving: player.moving,
         speed: player.speed,
         manaRegenPerSec: player.manaRegenPerSec,
         alive: player.alive,
@@ -1093,8 +1101,7 @@ export class Game {
         dodgeCooldownRemaining: Math.max(0, player.dodgeReadyAt - now),
       },
       others,
-      caches,
-      drops,
+      ...(includeEntities ? { caches, drops } : {}),
       projectiles,
       battlePortal,
       linkPortals,
@@ -1125,7 +1132,7 @@ export class Game {
     };
   }
 
-  dmSnapshot(levelIndex = 0) {
+  dmSnapshot(levelIndex = 0, includeEntities = true) {
     const players = [];
     for (const p of this.players.values()) {
       if (p.level !== levelIndex) continue;
@@ -1144,13 +1151,13 @@ export class Game {
     }
 
     const level = this.levels[levelIndex] ?? this.levels[0];
-    const caches = level.caches
+    const caches = includeEntities ? level.caches
       .filter((c) => !c.looted)
-      .map((c) => ({ id: c.id, x: round2(c.x), y: round2(c.y) }));
+      .map((c) => ({ id: c.id, x: round2(c.x), y: round2(c.y) })) : undefined;
 
-    const drops = this.groundItems.get(levelIndex).map((d) => ({
+    const drops = includeEntities ? this.groundItems.get(levelIndex).map((d) => ({
       uid: d.uid, x: round2(d.x), y: round2(d.y), name: d.item.name, kind: d.item.kind,
-    }));
+    })) : undefined;
     const projectiles = this.projectiles
       .filter((projectile) => projectile.level === levelIndex)
       .map(publicProjectile);
@@ -1158,7 +1165,10 @@ export class Game {
     const now = Date.now();
     const battlePortal = level.battlePortal ? publicBattlePortal(level.battlePortal, now) : null;
     const linkPortals = level.linkPortals.map(publicLinkPortal);
-    return { t: now, level: levelIndex, players, caches, drops, projectiles, battlePortal, linkPortals };
+    return {
+      t: now, level: levelIndex, players, projectiles, battlePortal, linkPortals,
+      ...(includeEntities ? { caches, drops } : {}),
+    };
   }
 }
 

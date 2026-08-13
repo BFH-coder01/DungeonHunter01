@@ -100,8 +100,9 @@ being bundled. There is no frontend build step.
 
 ## Controls — participant view
 
-- Forward/back: W/S or ↑/↓; strafe left/right: A/D. Tap movement keys to
-  walk, or hold any direction for 0.65 seconds to sprint.
+- Forward/back: W/S or ↑/↓; strafe left/right: A/D. Movement is charged per
+  server cycle, so brief separated taps conserve stamina while holding a
+  direction produces continuous fast movement and continuous drain.
 - Turn: mouse-look (click the view to capture the pointer; Esc releases it)
   where the browser/environment supports pointer lock, or hold ←/→ for a
   smooth continuous turn otherwise. An earlier version used a discrete
@@ -118,15 +119,15 @@ being bundled. There is no frontend build step.
   loadout, and right-click to drop. A shield activates a directional dodge;
   two equipped weapons make the left weapon an off-hand attack at half damage.
 
-Sprinting, weapons, shield dodges, and spells consume the same stamina pool.
-Sprinting is 1.4× walking speed and drains 20 stamina per second. Releasing the
-movement keys or exhausting stamina returns the player to walking speed;
-stamina then regenerates after its short delay, including while walking. An
-exhausted sprint stays locked until 20 stamina has recovered. Only one attack,
-cast, dodge, or weapon swap can be active at a time, and each weapon slows
-movement by its own amount during wind-up and recovery. The server also
-rate-limits input and action messages per connection so key spam cannot flood
-the simulation.
+Movement, weapons, shield dodges, and spells consume the same stamina pool.
+Every successful movement cycle travels at 1.4× base speed and drains 14
+stamina per second; zero stamina prevents further movement. Regeneration is 10
+stamina per second and begins one second after all forward, backward, or
+sidestep input is released. This makes spaced taps sustainable while continuous
+running remains costly. Only one attack, cast, dodge, or weapon swap can be
+active at a time, and each weapon slows movement by its own amount during
+wind-up and recovery. The server also rate-limits input and action messages per
+connection so key spam cannot flood the simulation.
 
 Each generated level also contains one animated red battle portal at a seeded
 random valid floor tile in the map's outer area, outside the battle destination

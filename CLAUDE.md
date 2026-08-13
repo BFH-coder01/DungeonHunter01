@@ -124,10 +124,12 @@ Current weapon/hand foundation:
   shield hand performs a directional dash with brief invulnerability.
 - First-person weapons animate by attack style, and opponent weapons turn
   amber during their telegraphed windup.
-- Weapon attacks, shield dodges, spell casts, and sustained movement sprints
-  spend authoritative stamina. Holding movement for `sprintHoldMs` activates
-  the speed multiplier and drain; tapping remains walking and permits recovery.
-  Exhaustion locks sprint until `sprintResumeStamina` has regenerated.
+- Weapon attacks, shield dodges, spell casts, and successful movement cycles
+  spend authoritative stamina. Movement always uses `movementSpeedScale` and
+  drains `movementStaminaPerSec`; zero stamina prevents movement. Regeneration
+  starts only after movement intent is released for `staminaRegenDelayMs`.
+  Never base drain on OS keyboard-repeat events—the client sends state and the
+  server owns cycle timing.
 - Only one attack, cast, dodge, or swap may be active; follow-up key presses are
   rejected rather than queued. Weapons apply individual movement scales during
   wind-up and recovery, and WebSocket token buckets protect against flooding.

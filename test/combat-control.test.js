@@ -88,8 +88,8 @@ test('stamina regenerates only after its delay and active action finish', () => 
   game.tick(0.5, now + 500);
   assert.equal(player.stamina, 88);
 
-  game.tick(0.5, now + 800);
-  assert.equal(player.stamina, 100);
+  game.tick(0.5, now + CONFIG.player.staminaRegenDelayMs + 1);
+  assert.equal(player.stamina, 93);
 });
 
 test('equipment loses durability on a wall strike and breaks at zero', () => {
@@ -121,28 +121,40 @@ test('a missed weapon swing does not consume durability', () => {
   assert.equal(weapon.durability, before);
 });
 
-test('held movement becomes a stamina-draining sprint and release allows recovery', () => {
+test('each movement cycle drains stamina and release allows slower recovery', () => {
   const { game, player } = playerGame(11445);
   const now = 48_000;
   game.blocked = () => false;
   player.move = { x: 1, y: 0 };
 
-  game.tick(0.25, now);
-  assert.equal(player.sprinting, false);
-  assert.equal(player.stamina, 100);
-
-  const beforeSprint = player.x;
-  game.tick(0.5, now + CONFIG.player.sprintHoldMs);
-  assert.equal(player.sprinting, true);
-  assert.equal(player.stamina, 90);
-  assert.ok(Math.abs(player.x - beforeSprint - player.speed * CONFIG.player.sprintSpeedScale * 0.5) < 0.001);
+  const beforeMove = player.x;
+  game.tick(0.5, now);
+  assert.equal(player.moving, true);
+  assert.equal(player.stamina, 93);
+  assert.ok(Math.abs(player.x - beforeMove - player.speed * CONFIG.player.movementSpeedScale * 0.5) < 0.001);
 
   player.move = { x: 0, y: 0 };
-  game.tick(0, now + CONFIG.player.sprintHoldMs + 50);
-  player.move = { x: 0, y: 1 };
-  game.tick(0.5, now + CONFIG.player.sprintHoldMs + CONFIG.player.staminaRegenDelayMs + 50);
-  assert.equal(player.sprinting, false);
-  assert.equal(player.stamina, 100);
+  game.tick(0, now + 50);
+  game.tick(0.5, now + CONFIG.player.staminaRegenDelayMs + 50);
+  assert.equal(player.moving, false);
+  assert.equal(player.stamina, 98);
+});
+
+test('movement intent prevents regeneration until all direction keys release', () => {
+  const { game, player } = playerGame(11556);
+  const now = 49_000;
+  player.stamina = 50;
+  player.move = { x: 1, y: 0 };
+  game.blocked = () => true;
+
+  game.tick(1, now);
+  game.tick(1, now + CONFIG.player.staminaRegenDelayMs + 1);
+  assert.equal(player.stamina, 50);
+
+  player.move = { x: 0, y: 0 };
+  game.tick(0, now + CONFIG.player.staminaRegenDelayMs + 2);
+  game.tick(1, now + CONFIG.player.staminaRegenDelayMs * 2 + 2);
+  assert.equal(player.stamina, 60);
 });
 
 test('a spell disappears after its final configured cast', () => {
@@ -306,6 +318,33 @@ test('every player snapshot receives every portal regardless of exploration', ()
   const snapshot = game.snapshotFor(player);
   assert.ok(snapshot.battlePortal);
   assert.equal(snapshot.linkPortals.length, 6);
+});
+
+test('unchanged cache and drop collections can be omitted from state deltas', () => {
+  const { game, player } = playerGame(100001);
+  const playerDelta = game.snapshotFor(player, false);
+  const dmDelta = game.dmSnapshot(0, false);
+  assert.equal(Object.hasOwn(playerDelta, 'caches'), false);
+  assert.equal(Object.hasOwn(playerDelta, 'drops'), false);
+  assert.equal(Object.hasOwn(dmDelta, 'caches'), false);
+  assert.equal(Object.hasOwn(dmDelta, 'drops'), false);
+});
+
+test('cache pickup and floor drop advance the static entity revision', () => {
+  const { game, player } = playerGame(100002);
+  const cache = game.levels[0].caches[0];
+  cache.item = makeWeapon('short_sword');
+  player.x = cache.x;
+  player.y = cache.y;
+  const beforePickup = game.entityRevision(0);
+
+  game.handleAction(player, { action: ACTION.PICKUP }, 90_000);
+  assert.equal(game.entityRevision(0), beforePickup + 1);
+
+  const reward = player.inventory.find((item) => item?.sourceCacheId === cache.id);
+  assert.ok(reward);
+  game.handleAction(player, { action: ACTION.DROP, uid: reward.uid }, 90_001);
+  assert.equal(game.entityRevision(0), beforePickup + 2);
 });
 
 test('ambient sound points scale with map dimensions and cover spawn regions', () => {

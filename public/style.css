@@ -161,7 +161,7 @@ html, body {
 
 #inventory::before, #inventory::after {
   position: absolute;
-  bottom: 69px;
+  bottom: 81px;
   color: var(--ink-dim);
   font-size: 9px;
   letter-spacing: 1px;
@@ -171,7 +171,7 @@ html, body {
 
 .slot {
   width: 64px;
-  height: 64px;
+  height: 76px;
   border: 1px solid var(--ink-dim);
   background: rgba(0, 0, 0, 0.55);
   font-size: 10px;
@@ -195,11 +195,12 @@ html, body {
 .slot.weapon .name { color: #ff9f5a; }
 .slot.spell .name { color: #4dc3ff; }
 .slot.shield .name { color: #c7d5df; }
+.slot .lifecycle { color: #d9bf72; font-size: 8px; white-space: nowrap; }
 .slot.empty { border-style: dashed; }
 
 #log {
   position: absolute;
-  bottom: 100px;
+  bottom: 112px;
   right: 14px;
   width: 260px;
   display: flex;

@@ -115,6 +115,69 @@ function pickSpread(candidates, count, minSeparation, rng) {
   return chosen;
 }
 
+function roomCenter(room) {
+  return { x: room.x + room.w / 2, y: room.y + room.h / 2 };
+}
+
+function roomPairKey(a, b, indices) {
+  const ai = indices.get(a);
+  const bi = indices.get(b);
+  return ai < bi ? `${ai}:${bi}` : `${bi}:${ai}`;
+}
+
+function addLoopCorridors(level, rng, connectedPairs) {
+  const rooms = level.rooms;
+  const indices = new Map(rooms.map((room, index) => [room, index]));
+  const target = Math.floor(rooms.length * CONFIG.dungeon.extraCorridorsPerRoom);
+  const neighborChoices = Math.max(1, CONFIG.dungeon.corridorNeighborChoices);
+  let added = 0;
+  let attempts = target * 12;
+
+  while (added < target && attempts-- > 0) {
+    const a = rng.pick(rooms);
+    const candidates = rooms
+      .filter((room) => room !== a && !connectedPairs.has(roomPairKey(a, room, indices)))
+      .sort((left, right) => dist2(roomCenter(a), roomCenter(left)) - dist2(roomCenter(a), roomCenter(right)))
+      .slice(0, neighborChoices);
+    if (!candidates.length) continue;
+    const b = rng.pick(candidates);
+    connectedPairs.add(roomPairKey(a, b, indices));
+    connect(level, a, b, rng);
+    added++;
+  }
+  return added;
+}
+
+function connectRoomSpanningTree(level, rng, connectedPairs) {
+  if (!level.rooms.length) return 0;
+  const indices = new Map(level.rooms.map((room, index) => [room, index]));
+  const connected = [rng.pick(level.rooms)];
+  const remaining = new Set(level.rooms.filter((room) => room !== connected[0]));
+  let added = 0;
+
+  while (remaining.size) {
+    let bestFrom = connected[0];
+    let bestTo = remaining.values().next().value;
+    let bestDistance = Infinity;
+    for (const from of connected) {
+      for (const to of remaining) {
+        const distance = dist2(roomCenter(from), roomCenter(to));
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestFrom = from;
+          bestTo = to;
+        }
+      }
+    }
+    connect(level, bestFrom, bestTo, rng);
+    connectedPairs.add(roomPairKey(bestFrom, bestTo, indices));
+    connected.push(bestTo);
+    remaining.delete(bestTo);
+    added++;
+  }
+  return added;
+}
+
 function pickCoverage(candidates, count, rng) {
   if (!candidates.length || count <= 0) return [];
   const chosen = [rng.pick(candidates)];
@@ -140,6 +203,7 @@ function generateLevel(depth, totalLevels, rng) {
     height,
     tiles: new Uint8Array(width * height).fill(TILE.WALL),
     rooms: [],
+    corridorConnections: 0,
     spawnPoints: [],
     caches: [],
     soundPoints: [],
@@ -153,16 +217,13 @@ function generateLevel(depth, totalLevels, rng) {
 
   level.rooms = placeRooms(level, rng);
 
-  // Chain every room, then add a few extra edges so there are loops to run.
-  for (let i = 1; i < level.rooms.length; i++) {
-    connect(level, level.rooms[i - 1], level.rooms[i], rng);
-  }
-  const extras = Math.floor(level.rooms.length * 0.25);
-  for (let i = 0; i < extras; i++) {
-    const a = rng.pick(level.rooms);
-    const b = rng.pick(level.rooms);
-    if (a !== b) connect(level, a, b, rng);
-  }
+  // Connect every room through the nearest available tree edge, then add short
+  // local loops. Avoiding placement-order cross-map cuts preserves separating
+  // walls and makes the result read as corridors rather than open floor.
+  const connectedPairs = new Set();
+  const treeCount = connectRoomSpanningTree(level, rng, connectedPairs);
+  const loopCount = addLoopCorridors(level, rng, connectedPairs);
+  level.corridorConnections = treeCount + loopCount;
 
   const open = openFloorTiles(level);
   const roomCount = Math.max(1, level.rooms.length);
@@ -171,7 +232,6 @@ function generateLevel(depth, totalLevels, rng) {
   // seeded dungeon RNG to choose a valid floor tile outside both that room and
   // the central map zone, so every client agrees while each new dungeon moves
   // the portal around the map's broad outer area.
-  const roomCenter = (room) => ({ x: room.x + room.w / 2, y: room.y + room.h / 2 });
   const battleRoom = level.rooms.slice().sort((a, b) => b.w * b.h - a.w * a.h)[0];
   if (battleRoom) {
     const battleCenter = roomCenter(battleRoom);
@@ -249,6 +309,8 @@ function generateLevel(depth, totalLevels, rng) {
     y: p.y + 0.5,
     item: rollCacheItem(rng),
     looted: false,
+    rewardUid: null,
+    respawnAt: 0,
   }));
   // Dodge is a cache-earned mechanic, but every generated level must contain
   // at least one shield so the mechanic is always discoverable and testable.

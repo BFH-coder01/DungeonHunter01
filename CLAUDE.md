@@ -67,7 +67,7 @@ npm start
   `ambientPointCount`, `AMBIENT_POINT_MIN`, `AMBIENT_BASE_AREA`,
   `AMBIENT_MAX_DIST`, `AMBIENT_REF_DIST`, and
   `AMBIENT_GAIN`.
-- Current ambient tuning: 36 points on 192×132, 22-tile maximum distance, 1.5-tile
+- Current ambient tuning: 45 points on 192×132, 22-tile maximum distance, 1.5-tile
   reference distance, and 0.30 ambient-only gain. Do not change footstep
   volume when tuning ambience.
 - Players receive authoritative points as they approach audible range. The DM
@@ -89,6 +89,11 @@ npm start
   billboards, hooded/downed avatar rendering.
 - `public/audio.js` — footstep loops, ambient scheduling, listener and panners.
 - `public/dm.js` — complete schematic dungeon/player/cache/sound overview.
+
+Dungeon corridor density is controlled by `extraCorridorsPerRoom` and
+`corridorNeighborChoices`. Extra links must remain unique and seeded; retain
+the nearest-room spanning tree so all rooms stay connected without long
+cross-map cuts, even when local loop density is retuned.
 
 ## Fight-dynamics starting point
 
@@ -119,8 +124,10 @@ Current weapon/hand foundation:
   shield hand performs a directional dash with brief invulnerability.
 - First-person weapons animate by attack style, and opponent weapons turn
   amber during their telegraphed windup.
-- Weapon attacks and shield dodges spend authoritative stamina. Regeneration
-  waits for both the configured delay and the active action to finish.
+- Weapon attacks, shield dodges, spell casts, and sustained movement sprints
+  spend authoritative stamina. Holding movement for `sprintHoldMs` activates
+  the speed multiplier and drain; tapping remains walking and permits recovery.
+  Exhaustion locks sprint until `sprintResumeStamina` has regenerated.
 - Only one attack, cast, dodge, or swap may be active; follow-up key presses are
   rejected rather than queued. Weapons apply individual movement scales during
   wind-up and recovery, and WebSocket token buckets protect against flooding.
@@ -151,6 +158,20 @@ Spell/projectile foundation:
 - Throwing Knives are hand equipment with a throw windup. They use the same
   projectile engine and land as the original inventory item after impact or
   range expiry, allowing any player to pick them up and reuse them.
+- Melee weapons lose durability only when a resolved swing contacts a player
+  or wall. Throwing knives wear only on player/wall projectile impact; misses,
+  range expiry, and cache collisions do not count. Shields wear on each dodge.
+  Spells have a finite cast count, consumed whenever the cast resolves, whether
+  or not an offensive projectile later hits. Cache rewards also
+  carry an absolute circulation deadline that survives drops, death, transfer,
+  and recoverable throws.
+- Every cache reward records its source cache. When that exact reward breaks,
+  exhausts, expires, or leaves with a disconnected player, the cache waits a
+  randomized delay, relocates to another valid separated floor tile, and rolls
+  a fresh item. Keep completion idempotent via the outstanding reward UID.
+- Lifecycle tuning belongs in `CONFIG.rewards`; per-item durability and cast
+  counts belong in `src/shared/items.js`. Do not reset lifecycle fields during
+  pickup or drop operations.
 
 ## Deferred scope
 

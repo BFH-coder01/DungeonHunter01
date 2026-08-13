@@ -16,9 +16,13 @@ export const CONFIG = {
   dungeon: {
     width: 192,
     height: 132,
-    roomAttempts: 1260,
-    roomMin: 5,
-    roomMax: 12,
+    roomAttempts: 1800,
+    roomMin: 4,
+    roomMax: 8,
+    // Short local loops add route choices without long cross-map cuts merging
+    // rooms and passages into broad open floor fields.
+    extraCorridorsPerRoom: 0.9,
+    corridorNeighborChoices: 8,
     // spawn points and caches scale with the number of rooms carved
     spawnPointsPerRoom: 1.2,
     cachesPerRoom: 0.9,
@@ -34,6 +38,10 @@ export const CONFIG = {
     maxStamina: 100,
     staminaRegenPerSec: 24,
     staminaRegenDelayMs: 700,
+    sprintHoldMs: 650,
+    sprintSpeedScale: 1.4,
+    sprintStaminaPerSec: 20,
+    sprintResumeStamina: 20,
     inventorySize: 8,
     inventorySideSize: 4,
     // Swapping a held item is deliberate: you stop, you swap, you move on.
@@ -59,5 +67,15 @@ export const CONFIG = {
     battlePortalCooldownMs: 20_000,
     battlePortalMinCenterDistanceRatio: 0.25,
     linkPortalRadius: 0.6,
+  },
+
+  // Cache rewards stay scarce but circulate. Use-based limits can finish an
+  // item early; the wall-clock limit prevents unused rewards being hoarded.
+  rewards: {
+    equipmentLifetimeMs: 5 * 60_000,
+    spellLifetimeMs: 4 * 60_000,
+    cacheRespawnDelayMs: [8_000, 16_000],
+    cacheMinSeparation: 5,
+    cacheMinRelocationDistance: 12,
   },
 };

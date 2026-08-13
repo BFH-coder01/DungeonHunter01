@@ -103,11 +103,19 @@ Generation is deterministic for a game seed. Rooms are carved and connected;
 then spread-out spawns, caches, ambient points, and optional stairs are placed.
 Cache contents come from shared item tables, and every generated level is
 guaranteed at least one shield. Ambient-point count scales with map dimensions
-(12 minimum, 36 on the current 192×132 test map); farthest-point placement
+(12 minimum, 45 on the current 192×132 test map); farthest-point placement
 keeps coverage even, and each receives one to three seeded clips.
 
 `src/shared/config.js` currently fixes generation to one level. Random 1–10
 level generation exists, but travel between levels remains deferred.
+
+The large test map uses smaller 4–8 tile rooms, yielding roughly 260–270 rooms.
+A nearest-room spanning tree guarantees connectivity without carving long
+placement-order cuts across the level. Unique short local loops equal to 90%
+of the room count then provide alternate routes. Sampled 192×132 maps contain
+roughly 490–515 connections and 43–45% walkable floor: many more recognizable
+corridors, with separating walls preventing them from merging into broad open
+fields.
 
 ## Inventory and combat
 
@@ -122,8 +130,11 @@ recovery. Shields perform a collision-checked directional dash with brief
 invulnerability and cooldown. Spell selection is immediate, but casting has a
 visible windup.
 
-Weapon attacks and shield dodges consume server-owned stamina. Regeneration
-starts only after a short delay and after the active combat action has ended.
+Weapon attacks, shield dodges, spell casts, and sustained sprinting consume
+server-owned stamina. Movement held for 650 ms becomes a 1.4× sprint and drains
+20 stamina per second; shorter movement taps remain normal walking. Exhaustion
+locks sprint until 20 stamina recovers, while walking permits regeneration once
+the normal delay and any active combat action have ended.
 Combat actions are mutually exclusive with no queued follow-up action. Weapon
 definitions provide separate wind-up and recovery movement scales, while spell
 wind-up uses a shared movement scale. Per-connection token buckets bound total,
@@ -155,27 +166,32 @@ Death drops inventory, updates kills/deaths, exposes the defeated player's name
 on the fallen avatar, and schedules a three-second respawn. Living opponents
 remain unlabeled hooded hunters in the player UI.
 
-### Planned reward lifecycle
+### Reward lifecycle
 
-Equipment durability, spell lifetimes, and cache regeneration are planned but
-not yet implemented. The server will remain authoritative for every lifecycle
-transition. Equipment will wear down through use, spells will cease to be
-available when their configured lifetime is complete, and the reward will then
-leave its owner's inventory.
+Equipment and spells are finite server-owned item instances. A melee weapon
+loses one durability only when its resolved attack reaches another player or a
+wall. A throwing knife loses durability only when its projectile reaches a
+player or wall; a miss, range expiry, or unopened-cache collision does not wear
+it. Shield dodges remove one durability. Every completed spell cast removes one
+cast regardless of whether its effect later hits a target. Zero-condition
+equipment and zero-cast spells are removed and automatically unequipped. The
+player snapshot exposes only the remaining public condition, casts, and
+cache-reward lifetime needed by the inventory HUD.
 
-Each generated reward will retain an association with the cache that supplied
-it. Once that reward's lifecycle completes, the cache becomes eligible to
-regenerate at a different seeded-valid random floor location rather than
-remaining permanently exhausted. Placement must use the dungeon's existing
-collision and reachability constraints. The design goal is circulation: scarce
-equipment and spells repeatedly return to play so one player cannot permanently
-deny everyone else access by hoarding them.
+Opening a cache stamps its reward with the source cache and level plus an
+absolute expiry time: five minutes for equipment and four minutes for spells.
+This wall-clock limit is preserved through inventory transfers, manual drops,
+death drops, and recoverable knife throws, so moving an item never renews it.
+Immediate boons complete their lifecycle when applied. Starter equipment uses
+durability/casts but has no source cache or wall-clock circulation deadline.
 
-Before implementation, balance decisions still required include the durability
-unit for each equipment class, whether spell lifetime is measured by time or
-uses, cache regeneration delay, and how dropped or transferred rewards retain
-their source association. These are tuning decisions; authoritative expiry,
-inventory removal, and relocated cache regeneration are the required behavior.
+When a sourced reward breaks, runs out of casts, expires anywhere in
+circulation, or disappears with a disconnected player, its source cache enters
+an 8–16 second seeded-random regeneration delay. It then moves at least 12
+tiles from its prior position to a floor tile separated from active caches,
+portals, and players, and rolls a fresh reward. A cache tracks the UID of its
+one outstanding reward, making completion idempotent and preventing duplicate
+regeneration. These values live under `CONFIG.rewards` for balance tuning.
 
 ## Rendering and audio
 
@@ -215,4 +231,4 @@ or multi-device gameplay checks.
 
 Near-term architectural work includes final strict visibility semantics,
 multi-level traversal, reconnect identity, mobile controls, combat balance,
-reward lifecycles, and broader server/protocol tests.
+reward-lifecycle balance, and broader server/protocol tests.

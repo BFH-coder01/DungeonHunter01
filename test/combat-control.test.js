@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { Game } from '../src/server/game.js';
 import { ACTION, TILE } from '../src/shared/constants.js';
-import { makeShield } from '../src/shared/items.js';
+import { makeShield, makeWeapon } from '../src/shared/items.js';
 import { consumeRateLimit } from '../src/server/rate-limit.js';
 import { tileAt } from '../src/server/dungeon.js';
 import { ambientPointCount } from '../src/shared/sounds.js';
@@ -14,6 +14,26 @@ function playerGame(seed = 12345) {
   const player = game.addPlayer('test-player', 'Tester');
   player.move = { x: 0, y: 0 };
   return { game, player };
+}
+
+function faceAdjacentWall(game, player) {
+  const level = game.levels[player.level];
+  const directions = [
+    { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
+  ];
+  for (let y = 1; y < level.height - 1; y++) {
+    for (let x = 1; x < level.width - 1; x++) {
+      if (tileAt(level, x, y) !== TILE.FLOOR) continue;
+      const direction = directions.find(({ dx, dy }) => tileAt(level, x + dx, y + dy) === TILE.WALL);
+      if (!direction) continue;
+      player.x = x + 0.5;
+      player.y = y + 0.5;
+      player.aim = Math.atan2(direction.dy, direction.dx);
+      return;
+    }
+  }
+  throw new Error('Generated level has no floor tile beside a wall');
 }
 
 test('one attack spends stamina once and ignores spam during recovery', () => {
@@ -41,7 +61,7 @@ test('casting blocks attacks until the cast resolves', () => {
 
   game.handleAction(player, { action: ACTION.ATTACK, hand: 'left' }, now + 1);
   assert.equal(player.attackState, null);
-  assert.equal(player.stamina, 100);
+  assert.equal(player.stamina, 92);
 });
 
 test('dodge spends stamina and blocks other combat actions', () => {
@@ -70,6 +90,106 @@ test('stamina regenerates only after its delay and active action finish', () => 
 
   game.tick(0.5, now + 800);
   assert.equal(player.stamina, 100);
+});
+
+test('equipment loses durability on a wall strike and breaks at zero', () => {
+  const { game, player } = playerGame(11223);
+  const weapon = player.inventory[0];
+  weapon.durability = 1;
+  const now = 45_000;
+  faceAdjacentWall(game, player);
+
+  game.handleAction(player, { action: ACTION.ATTACK, hand: 'left' }, now);
+  game.tick(0, player.attackState.resolveAt);
+
+  assert.equal(game.findItem(player, weapon.uid), null);
+  assert.equal(player.leftHandUid, null);
+  assert.ok(game.drainEvents(player.id).some((event) => event.kind === 'broken' && event.name === weapon.name));
+});
+
+test('a missed weapon swing does not consume durability', () => {
+  const { game, player } = playerGame(11334);
+  const weapon = player.inventory[0];
+  const before = weapon.durability;
+  game.frontTargets = () => [];
+  game.attackHitsWall = () => false;
+  const now = 46_000;
+
+  game.handleAction(player, { action: ACTION.ATTACK, hand: 'left' }, now);
+  game.tick(0, player.attackState.resolveAt);
+
+  assert.equal(weapon.durability, before);
+});
+
+test('held movement becomes a stamina-draining sprint and release allows recovery', () => {
+  const { game, player } = playerGame(11445);
+  const now = 48_000;
+  game.blocked = () => false;
+  player.move = { x: 1, y: 0 };
+
+  game.tick(0.25, now);
+  assert.equal(player.sprinting, false);
+  assert.equal(player.stamina, 100);
+
+  const beforeSprint = player.x;
+  game.tick(0.5, now + CONFIG.player.sprintHoldMs);
+  assert.equal(player.sprinting, true);
+  assert.equal(player.stamina, 90);
+  assert.ok(Math.abs(player.x - beforeSprint - player.speed * CONFIG.player.sprintSpeedScale * 0.5) < 0.001);
+
+  player.move = { x: 0, y: 0 };
+  game.tick(0, now + CONFIG.player.sprintHoldMs + 50);
+  player.move = { x: 0, y: 1 };
+  game.tick(0.5, now + CONFIG.player.sprintHoldMs + CONFIG.player.staminaRegenDelayMs + 50);
+  assert.equal(player.sprinting, false);
+  assert.equal(player.stamina, 100);
+});
+
+test('a spell disappears after its final configured cast', () => {
+  const { game, player } = playerGame(22334);
+  const spell = player.inventory[1];
+  spell.castsRemaining = 1;
+  const now = 47_000;
+
+  game.handleAction(player, { action: ACTION.CAST }, now);
+  game.tick(0, player.castState.resolveAt);
+
+  assert.equal(game.findItem(player, spell.uid), null);
+  assert.equal(player.equippedSpellUid, null);
+  assert.ok(game.drainEvents(player.id).some((event) => event.kind === 'expired' && event.reason === 'casts'));
+});
+
+test('dropping a cache reward does not reset expiry and its chest relocates', () => {
+  const { game, player } = playerGame(33445);
+  const level = game.levels[0];
+  const cache = level.caches[0];
+  cache.item = makeWeapon('short_sword');
+  const original = { x: cache.x, y: cache.y };
+  const now = 49_000;
+  player.x = cache.x;
+  player.y = cache.y;
+
+  game.handleAction(player, { action: ACTION.PICKUP }, now);
+  const reward = game.findItem(player, cache.rewardUid);
+  assert.ok(reward);
+  assert.equal(reward.sourceCacheId, cache.id);
+  assert.equal(reward.expiresAt, now + CONFIG.rewards.equipmentLifetimeMs);
+
+  game.handleAction(player, { action: ACTION.DROP, uid: reward.uid }, now + 1);
+  const drop = game.groundItems.get(0).find((entry) => entry.uid === reward.uid);
+  assert.equal(drop.item.expiresAt, reward.expiresAt);
+  assert.equal(cache.looted, true);
+  assert.equal(cache.respawnAt, 0);
+
+  game.tick(0, reward.expiresAt);
+  assert.equal(game.groundItems.get(0).some((entry) => entry.uid === reward.uid), false);
+  assert.ok(cache.respawnAt > reward.expiresAt);
+
+  game.tick(0, cache.respawnAt);
+  assert.equal(cache.looted, false);
+  assert.ok(cache.item);
+  assert.notEqual(cache.item.uid, reward.uid);
+  assert.ok(Math.hypot(cache.x - original.x, cache.y - original.y) >= CONFIG.rewards.cacheMinRelocationDistance);
 });
 
 test('token bucket drops floods and refills over time', () => {
@@ -190,11 +310,11 @@ test('every player snapshot receives every portal regardless of exploration', ()
 
 test('ambient sound points scale with map dimensions and cover spawn regions', () => {
   assert.equal(ambientPointCount(64, 44), 12);
-  assert.equal(ambientPointCount(192, 132), 36);
-  assert.equal(ambientPointCount(384, 264), 72);
+  assert.equal(ambientPointCount(192, 132), 45);
+  assert.equal(ambientPointCount(384, 264), 90);
 
   const level = new Game(101010).levels[0];
-  assert.equal(level.soundPoints.length, 36);
+  assert.equal(level.soundPoints.length, 45);
   let nearest = Infinity;
   for (let i = 0; i < level.soundPoints.length; i++) {
     for (let j = i + 1; j < level.soundPoints.length; j++) {
@@ -208,4 +328,16 @@ test('ambient sound points scale with map dimensions and cover spawn regions', (
   const farthestSpawn = Math.max(...level.spawnPoints.map((spawn) =>
     Math.min(...level.soundPoints.map((point) => Math.hypot(point.x - spawn.x, point.y - spawn.y)))));
   assert.ok(farthestSpawn <= 22);
+});
+
+test('large test maps use many short corridors without becoming open fields', () => {
+  for (const seed of [11111, 22222, 33333]) {
+    const level = new Game(seed).levels[0];
+    const expectedMinimum = (level.rooms.length - 1) +
+      Math.floor(level.rooms.length * CONFIG.dungeon.extraCorridorsPerRoom);
+    const walkable = [...level.tiles].filter((tile) => tile !== TILE.WALL).length;
+    assert.ok(level.corridorConnections >= expectedMinimum);
+    assert.ok(walkable / level.tiles.length >= 0.40);
+    assert.ok(walkable / level.tiles.length <= 0.50);
+  }
 });

@@ -244,7 +244,7 @@ function updateHud() {
   mpText.textContent = `MP ${self.mana}/${self.maxMana}`;
   staminaFill.style.transform = `scaleX(${Math.max(0, self.stamina / self.maxStamina)})`;
   staminaText.textContent = `STA ${self.stamina}/${self.maxStamina}`;
-  spdText.textContent = self.speed.toFixed(1);
+  spdText.textContent = `${self.speed.toFixed(1)}${self.sprinting ? ' RUN' : ''}`;
   lvlText.textContent = self.level + 1;
   kdText.textContent = `${self.kills}/${self.deaths}`;
 
@@ -258,7 +258,9 @@ function updateHud() {
 
 function renderInventory() {
   const signature = JSON.stringify({
-    items: self.inventory.map((item) => item?.uid || null),
+    items: self.inventory.map((item) => item
+      ? [item.uid, item.durability, item.castsRemaining, item.lifeSeconds]
+      : null),
     left: self.leftHandUid,
     right: self.rightHandUid,
     spell: self.equippedSpellUid,
@@ -300,7 +302,7 @@ function renderInventory() {
         d.textContent = item.heal ? `heal ${item.heal}` : `dmg ${item.damage}`;
         slot.appendChild(d);
         const m = document.createElement('div');
-        m.textContent = `mp ${item.manaCost}`;
+        m.textContent = `mp ${item.manaCost} · sta ${item.staminaCost}`;
         slot.appendChild(m);
       } else if (item.kind === 'shield') {
         const d = document.createElement('div');
@@ -309,6 +311,20 @@ function renderInventory() {
         const s = document.createElement('div');
         s.textContent = `sta ${item.staminaCost}`;
         slot.appendChild(s);
+      }
+      const lifecycle = [];
+      if (Number.isFinite(item.durability)) lifecycle.push(`wear ${item.durability}/${item.maxDurability}`);
+      if (Number.isFinite(item.castsRemaining)) lifecycle.push(`casts ${item.castsRemaining}/${item.maxCasts}`);
+      if (Number.isFinite(item.lifeSeconds)) {
+        const minutes = Math.floor(item.lifeSeconds / 60);
+        const seconds = String(item.lifeSeconds % 60).padStart(2, '0');
+        lifecycle.push(`life ${minutes}:${seconds}`);
+      }
+      if (lifecycle.length) {
+        const life = document.createElement('div');
+        life.className = 'lifecycle';
+        life.textContent = lifecycle.join(' · ');
+        slot.appendChild(life);
       }
       slot.addEventListener('click', () => sendAction(ACTION.EQUIP, { uid: item.uid }));
       slot.addEventListener('contextmenu', (e) => {
@@ -360,6 +376,11 @@ function handleEvent(ev) {
     case 'full': log(`inventory full — can't pick up ${ev.name}`, 'bad'); break;
     case 'nomana': log(`not enough mana for ${ev.name} (need ${ev.need})`, 'bad'); break;
     case 'nostamina': log(`not enough stamina for ${ev.name} (need ${ev.need})`, 'bad'); break;
+    case 'broken': log(`${ev.name} broke from wear`, 'bad'); break;
+    case 'expired': log(`${ev.name} expired`, 'bad'); break;
+    case 'cacheregen':
+      if (ev.level === self?.level) log('A chest reformed somewhere in the dungeon.', 'good');
+      break;
     case 'battleportal':
       renderX = self.x;
       renderY = self.y;

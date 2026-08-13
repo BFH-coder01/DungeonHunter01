@@ -4,7 +4,7 @@
 import { TILE, PLAYER_RADIUS, SIGHT_RADIUS, RESPAWN_DELAY_MS, ACTION } from '../shared/constants.js';
 import { CONFIG } from '../shared/config.js';
 import { makeRng, randomSeed } from '../shared/rng.js';
-import { makeWeapon, makeSpell } from '../shared/items.js';
+import { makeWeapon, makeSpell, rollCacheItem } from '../shared/items.js';
 import { AMBIENT_MAX_DIST } from '../shared/sounds.js';
 import { generateDungeon, tileAt } from './dungeon.js';
 
@@ -56,6 +56,9 @@ export class Game {
       stamina: p.maxStamina,
       staminaRegenAt: 0,
       staminaNoticeAt: 0,
+      moveStartedAt: null,
+      sprintLocked: false,
+      sprinting: false,
       speed: Math.round(r.float(p.speed[0], p.speed[1]) * 10) / 10,
       manaRegenPerSec: Math.round(r.float(p.manaRegenPerSec[0], p.manaRegenPerSec[1]) * 10) / 10,
       inventory,
@@ -87,6 +90,13 @@ export class Game {
   }
 
   removePlayer(id) {
+    const player = this.players.get(id);
+    if (player) {
+      const now = Date.now();
+      for (const item of player.inventory) {
+        if (item) this.completeReward(item, now);
+      }
+    }
     this.players.delete(id);
   }
 
@@ -119,6 +129,9 @@ export class Game {
     player.mana = player.maxMana;
     player.stamina = player.maxStamina;
     player.staminaRegenAt = 0;
+    player.moveStartedAt = null;
+    player.sprintLocked = false;
+    player.sprinting = false;
     player.alive = true;
     player.respawnAt = 0;
     player.move = { x: 0, y: 0 };
@@ -204,17 +217,36 @@ export class Game {
   movePlayer(player, dt, now) {
     if (!player.alive) return;
     const actionScale = this.movementScale(player, now);
-    if (actionScale <= 0) return;
 
     let { x: mx, y: my } = player.move;
     const len = Math.hypot(mx, my);
-    if (len < 0.001) return;
+    if (len < 0.001) {
+      player.moveStartedAt = null;
+      player.sprinting = false;
+      return;
+    }
+    if (player.moveStartedAt === null) player.moveStartedAt = now;
+    if (player.sprintLocked && player.stamina >= CONFIG.player.sprintResumeStamina) {
+      player.sprintLocked = false;
+    }
+    const heldLongEnough = now - player.moveStartedAt >= CONFIG.player.sprintHoldMs;
+    player.sprinting = actionScale > 0 && heldLongEnough && !player.sprintLocked && player.stamina > 0;
+    if (player.sprinting) {
+      player.stamina = Math.max(0, player.stamina - CONFIG.player.sprintStaminaPerSec * dt);
+      player.staminaRegenAt = now + CONFIG.player.staminaRegenDelayMs;
+      if (player.stamina <= 0) {
+        player.sprintLocked = true;
+        player.sprinting = false;
+      }
+    }
+    if (actionScale <= 0) return;
     mx /= len;
     my /= len;
 
     const level = this.levels[player.level];
     const speedScale = now < player.slowUntil ? 0.55 : 1;
-    const step = player.speed * speedScale * actionScale * dt;
+    const sprintScale = player.sprinting ? CONFIG.player.sprintSpeedScale : 1;
+    const step = player.speed * speedScale * actionScale * sprintScale * dt;
     const nx = player.x + mx * step;
     const ny = player.y + my * step;
 
@@ -252,6 +284,8 @@ export class Game {
       player.y = spot.y;
       player.aim = Math.atan2(roomCenter.y - spot.y, roomCenter.x - spot.x);
       player.move = { x: 0, y: 0 };
+      player.moveStartedAt = null;
+      player.sprinting = false;
       player.attackState = null;
       player.castState = null;
       player.swingUntil = 0;
@@ -282,6 +316,8 @@ export class Game {
     player.x = destination.x;
     player.y = destination.y;
     player.move = { x: 0, y: 0 };
+    player.moveStartedAt = null;
+    player.sprinting = false;
     player.attackState = null;
     player.castState = null;
     player.swingUntil = 0;
@@ -476,6 +512,10 @@ export class Game {
       if (hit && attack.knockback && target.alive) this.knockback(target, player, attack.knockback);
     }
     this.emit(player, 'swing', { name: attack.name, hand: attack.hand, hits: targets.length });
+    if (targets.length || this.attackHitsWall(player, attack.range)) {
+      const weapon = this.findItem(player, attack.uid);
+      if (weapon) this.wearEquipment(player, weapon, now);
+    }
   }
 
   doDodge(player, hand, shield, now) {
@@ -501,6 +541,7 @@ export class Game {
     player.invulnerableUntil = player.dodgeUntil;
     player.dodgeReadyAt = now + shield.cooldownMs;
     this.emit(player, 'dodge', { name: shield.name, hand, cooldownMs: shield.cooldownMs });
+    this.wearEquipment(player, shield, now);
   }
 
   doCast(player, now) {
@@ -511,6 +552,7 @@ export class Game {
       this.emit(player, 'nomana', { name: spell.name, need: spell.manaCost });
       return;
     }
+    if (!this.spendStamina(player, spell.staminaCost, now, spell.name)) return;
     player.mana -= spell.manaCost;
     player.castReadyAt = now + spell.cooldownMs;
     player.castState = {
@@ -539,27 +581,28 @@ export class Game {
       const before = player.health;
       player.health = Math.min(player.maxHealth, player.health + cast.heal);
       this.emit(player, 'cast', { name: cast.name, healed: Math.round(player.health - before) });
-      return;
+    } else {
+      const offset = PLAYER_RADIUS + 0.12;
+      this.projectiles.push({
+        id: `p${this.nextProjectileId++}`,
+        ownerId: player.id,
+        level: player.level,
+        x: player.x + Math.cos(player.aim) * offset,
+        y: player.y + Math.sin(player.aim) * offset,
+        vx: Math.cos(player.aim),
+        vy: Math.sin(player.aim),
+        speed: cast.projectileSpeed,
+        range: cast.range,
+        travelled: 0,
+        baseDamage: cast.damage,
+        label: cast.name,
+        style: cast.style,
+        slowMs: cast.slowMs,
+        blastRadius: cast.blastRadius,
+      });
+      this.emit(player, 'cast', { name: cast.name, launched: true });
     }
-    const offset = PLAYER_RADIUS + 0.12;
-    this.projectiles.push({
-      id: `p${this.nextProjectileId++}`,
-      ownerId: player.id,
-      level: player.level,
-      x: player.x + Math.cos(player.aim) * offset,
-      y: player.y + Math.sin(player.aim) * offset,
-      vx: Math.cos(player.aim),
-      vy: Math.sin(player.aim),
-      speed: cast.projectileSpeed,
-      range: cast.range,
-      travelled: 0,
-      baseDamage: cast.damage,
-      label: cast.name,
-      style: cast.style,
-      slowMs: cast.slowMs,
-      blastRadius: cast.blastRadius,
-    });
-    this.emit(player, 'cast', { name: cast.name, launched: true });
+    this.consumeSpell(player, cast.uid, now);
   }
 
   updateProjectiles(dt, now) {
@@ -571,6 +614,7 @@ export class Game {
       const steps = Math.max(1, Math.ceil(distance / 0.12));
       const step = distance / steps;
       let stopped = false;
+      let wearCollision = false;
 
       for (let i = 0; i < steps && !stopped; i++) {
         const nx = projectile.x + projectile.vx * step;
@@ -578,6 +622,7 @@ export class Game {
         projectile.travelled += step;
         if (tileAt(level, Math.floor(nx), Math.floor(ny)) === TILE.WALL) {
           stopped = true;
+          wearCollision = true;
           break;
         }
         if (level.caches.some((cache) => !cache.looted && Math.hypot(cache.x - nx, cache.y - ny) < 0.46)) {
@@ -590,6 +635,7 @@ export class Game {
         for (const target of this.players.values()) {
           if (!target.alive || target.id === projectile.ownerId || target.level !== projectile.level) continue;
           if (Math.hypot(target.x - nx, target.y - ny) > PLAYER_RADIUS + 0.14) continue;
+          wearCollision = true;
           const energy = clamp(1 - (projectile.travelled / projectile.range) * 0.6, 0.4, 1);
           const damage = Math.max(1, Math.round(projectile.baseDamage * energy));
           if (projectile.blastRadius > 0) {
@@ -611,12 +657,15 @@ export class Game {
       }
       if (!stopped) survivors.push(projectile);
       else if (projectile.recoverable && projectile.item) {
-        this.groundItems.get(projectile.level).push({
-          uid: projectile.item.uid,
-          x: projectile.x,
-          y: projectile.y,
-          item: projectile.item,
-        });
+        const broken = wearCollision && this.wearEquipment(owner, projectile.item, now);
+        if (!broken) {
+          this.groundItems.get(projectile.level).push({
+            uid: projectile.item.uid,
+            x: projectile.x,
+            y: projectile.y,
+            item: projectile.item,
+          });
+        }
       }
     }
     this.projectiles = survivors;
@@ -677,6 +726,141 @@ export class Game {
     return true;
   }
 
+  attackHitsWall(player, range) {
+    const level = this.levels[player.level];
+    const dx = Math.cos(player.aim);
+    const dy = Math.sin(player.aim);
+    for (let distance = PLAYER_RADIUS; distance <= range; distance += 0.1) {
+      const x = Math.floor(player.x + dx * distance);
+      const y = Math.floor(player.y + dy * distance);
+      if (tileAt(level, x, y) === TILE.WALL) return true;
+    }
+    return false;
+  }
+
+  removeInventoryItem(player, uid, cancelActive = false) {
+    const slot = player.inventory.findIndex((item) => item?.uid === uid);
+    if (slot === -1) return null;
+    const item = player.inventory[slot];
+    player.inventory[slot] = null;
+    if (player.leftHandUid === uid) player.leftHandUid = null;
+    if (player.rightHandUid === uid) player.rightHandUid = null;
+    if (player.equippedSpellUid === uid) player.equippedSpellUid = null;
+    if (cancelActive && player.attackState?.uid === uid) player.attackState = null;
+    if (cancelActive && player.castState?.uid === uid) player.castState = null;
+    return item;
+  }
+
+  wearEquipment(player, item, now) {
+    if (!item || (item.kind !== 'weapon' && item.kind !== 'shield')) return false;
+    item.durability = Math.max(0, item.durability - 1);
+    if (item.durability > 0) return false;
+    if (player) this.removeInventoryItem(player, item.uid);
+    this.completeReward(item, now);
+    if (player) this.emit(player, 'broken', { name: item.name });
+    return true;
+  }
+
+  consumeSpell(player, uid, now) {
+    const spell = this.findItem(player, uid);
+    if (!spell) return;
+    spell.castsRemaining = Math.max(0, spell.castsRemaining - 1);
+    if (spell.castsRemaining > 0) return;
+    this.removeInventoryItem(player, uid);
+    this.completeReward(spell, now);
+    this.emit(player, 'expired', { name: spell.name, reason: 'casts' });
+  }
+
+  bindCacheReward(item, cache, levelIndex, now) {
+    item.sourceCacheId = cache.id;
+    item.sourceLevel = levelIndex;
+    item.lifecycleComplete = false;
+    if (item.kind === 'spell') item.expiresAt = now + CONFIG.rewards.spellLifetimeMs;
+    else if (item.kind === 'weapon' || item.kind === 'shield') {
+      item.expiresAt = now + CONFIG.rewards.equipmentLifetimeMs;
+    }
+  }
+
+  completeReward(item, now) {
+    if (!item?.sourceCacheId || item.lifecycleComplete) return;
+    item.lifecycleComplete = true;
+    const level = this.levels[item.sourceLevel];
+    const cache = level?.caches.find((entry) => entry.id === item.sourceCacheId);
+    if (!cache || cache.rewardUid !== item.uid) return;
+    const [minDelay, maxDelay] = CONFIG.rewards.cacheRespawnDelayMs;
+    cache.rewardUid = null;
+    cache.respawnAt = now + this.rng.int(minDelay, maxDelay);
+  }
+
+  expireLifecycleItems(now) {
+    for (const player of this.players.values()) {
+      for (const item of player.inventory.slice()) {
+        if (!item?.expiresAt || now < item.expiresAt) continue;
+        this.removeInventoryItem(player, item.uid, true);
+        this.completeReward(item, now);
+        this.emit(player, 'expired', { name: item.name, reason: 'time' });
+      }
+    }
+
+    for (const pile of this.groundItems.values()) {
+      for (let i = pile.length - 1; i >= 0; i--) {
+        const item = pile[i].item;
+        if (!item?.expiresAt || now < item.expiresAt) continue;
+        pile.splice(i, 1);
+        this.completeReward(item, now);
+      }
+    }
+
+    for (const projectile of this.projectiles) {
+      const item = projectile.item;
+      if (!item?.expiresAt || now < item.expiresAt) continue;
+      projectile.item = null;
+      projectile.recoverable = false;
+      this.completeReward(item, now);
+    }
+  }
+
+  cachePosition(level, cache, levelIndex) {
+    const active = level.caches.filter((entry) => entry !== cache && !entry.looted);
+    const portals = [level.battlePortal, ...level.linkPortals].filter(Boolean);
+    const nearbyPlayers = [...this.players.values()].filter((player) => player.level === levelIndex);
+    const candidates = [];
+    for (let y = 1; y < level.height - 1; y++) {
+      for (let x = 1; x < level.width - 1; x++) {
+        if (tileAt(level, x, y) !== TILE.FLOOR) continue;
+        const px = x + 0.5;
+        const py = y + 0.5;
+        if (Math.hypot(px - cache.x, py - cache.y) < CONFIG.rewards.cacheMinRelocationDistance) continue;
+        if (active.some((entry) => Math.hypot(px - entry.x, py - entry.y) < CONFIG.rewards.cacheMinSeparation)) continue;
+        if (portals.some((portal) => Math.hypot(px - portal.x, py - portal.y) < 2)) continue;
+        if (nearbyPlayers.some((player) => Math.hypot(px - player.x, py - player.y) < 2)) continue;
+        candidates.push({ x: px, y: py });
+      }
+    }
+    return candidates.length ? this.rng.pick(candidates) : null;
+  }
+
+  respawnCaches(now) {
+    for (let levelIndex = 0; levelIndex < this.levels.length; levelIndex++) {
+      const level = this.levels[levelIndex];
+      for (const cache of level.caches) {
+        if (!cache.looted || !cache.respawnAt || now < cache.respawnAt) continue;
+        const position = this.cachePosition(level, cache, levelIndex);
+        if (!position) {
+          cache.respawnAt = now + 1_000;
+          continue;
+        }
+        cache.x = position.x;
+        cache.y = position.y;
+        cache.item = rollCacheItem(this.rng);
+        cache.looted = false;
+        cache.respawnAt = 0;
+        cache.rewardUid = null;
+        this.broadcast('cacheregen', { level: levelIndex });
+      }
+    }
+  }
+
   doPickup(player, now) {
     const level = this.levels[player.level];
     // Caches can be opened from about a tile away (E or O); loose floor
@@ -684,8 +868,18 @@ export class Game {
     for (const cache of level.caches) {
       if (cache.looted) continue;
       if (Math.hypot(cache.x - player.x, cache.y - player.y) > 1.1) continue;
-      if (!this.giveItem(player, cache.item, now)) return;
+      if (cache.item.kind !== 'boon' && !player.inventory.includes(null)) {
+        this.emit(player, 'full', { name: cache.item.name });
+        return;
+      }
+      const item = cache.item;
       cache.looted = true;
+      cache.item = null;
+      cache.rewardUid = item.uid;
+      cache.respawnAt = 0;
+      this.bindCacheReward(item, cache, player.level, now);
+      this.giveItem(player, item, now);
+      if (item.kind === 'boon') this.completeReward(item, now);
       return;
     }
     const pile = this.groundItems.get(player.level);
@@ -781,6 +975,8 @@ export class Game {
 
   tick(dt, now) {
     this.tickCount++;
+    this.expireLifecycleItems(now);
+    this.respawnCaches(now);
 
     for (const player of this.players.values()) {
       if (!player.alive) {
@@ -878,6 +1074,7 @@ export class Game {
         maxMana: player.maxMana,
         stamina: Math.round(player.stamina),
         maxStamina: player.maxStamina,
+        sprinting: player.sprinting,
         speed: player.speed,
         manaRegenPerSec: player.manaRegenPerSec,
         alive: player.alive,
@@ -886,7 +1083,7 @@ export class Game {
         castRemaining: Math.max(0, player.castReadyAt - now),
         kills: player.kills,
         deaths: player.deaths,
-        inventory: player.inventory.map((item) => item ? publicItem(item) : null),
+        inventory: player.inventory.map((item) => item ? publicItem(item, now) : null),
         leftHandUid: player.leftHandUid,
         rightHandUid: player.rightHandUid,
         equippedSpellUid: player.equippedSpellUid,
@@ -973,22 +1170,27 @@ function round2(v) {
   return Math.round(v * 100) / 100;
 }
 
-function publicItem(item) {
+function publicItem(item, now) {
   const out = { uid: item.uid, kind: item.kind, name: item.name };
   if (item.kind === 'weapon') Object.assign(out, {
     damage: item.damage, range: item.range, windupMs: item.windupMs,
     swingMs: item.swingMs, staminaCost: item.staminaCost,
     attackStyle: item.attackStyle, throwable: !!item.throwable,
+    durability: item.durability, maxDurability: item.maxDurability,
   });
   if (item.kind === 'shield') Object.assign(out, {
     dodgeDistance: item.dodgeDistance, cooldownMs: item.cooldownMs,
-    staminaCost: item.staminaCost,
+    staminaCost: item.staminaCost, durability: item.durability,
+    maxDurability: item.maxDurability,
   });
   if (item.kind === 'spell') Object.assign(out, {
     damage: item.damage, heal: item.heal, manaCost: item.manaCost,
+    staminaCost: item.staminaCost,
     windupMs: item.windupMs, cooldownMs: item.cooldownMs,
-    projectileStyle: item.projectileStyle,
+    projectileStyle: item.projectileStyle, castsRemaining: item.castsRemaining,
+    maxCasts: item.casts,
   });
+  if (item.expiresAt) out.lifeSeconds = Math.max(0, Math.ceil((item.expiresAt - now) / 1000));
   return out;
 }
 

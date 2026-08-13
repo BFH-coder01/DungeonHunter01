@@ -16,8 +16,8 @@ There are two ways to view the dungeon:
 
 ## v01 scope
 
-- Procedural dungeon: random 1–10 levels (rooms + corridors), random weapon
-  caches, random player spawn points.
+- Procedural dungeon: random 1–10 levels with dense looping corridor networks,
+  random weapon caches, and random player spawn points.
 - Players join from a browser, get assigned a random spawn point; on death
   they respawn at a different random spawn point.
 - Per-player HUD with fog-of-war — only the parts of the dungeon a player has
@@ -29,6 +29,10 @@ There are two ways to view the dungeon:
   (stop-and-swap, ~0.9s) — no hotkey instant-switching. Preparing a known
   spell is immediate, but every cast has a visible server-timed windup before
   healing resolves or a projectile launches.
+- Equipment wears down through use, spells have finite casts, and cache
+  rewards also have a real-time circulation limit. When a reward ends, its
+  source chest returns after a short random delay at a different valid map
+  location with a newly rolled reward.
 - Other living players appear in first person as unlabeled hooded hunters.
   When one is killed, their fallen avatar briefly displays their name during
   the respawn window; living-player names and health remain hidden.
@@ -96,8 +100,8 @@ being bundled. There is no frontend build step.
 
 ## Controls — participant view
 
-- Forward/back: W/S or ↑/↓
-- Strafe left/right: A/D
+- Forward/back: W/S or ↑/↓; strafe left/right: A/D. Tap movement keys to
+  walk, or hold any direction for 0.65 seconds to sprint.
 - Turn: mouse-look (click the view to capture the pointer; Esc releases it)
   where the browser/environment supports pointer lock, or hold ←/→ for a
   smooth continuous turn otherwise. An earlier version used a discrete
@@ -114,11 +118,15 @@ being bundled. There is no frontend build step.
   loadout, and right-click to drop. A shield activates a directional dodge;
   two equipped weapons make the left weapon an off-hand attack at half damage.
 
-Weapons and shield dodges consume stamina. Stamina regenerates after a short
-delay once the current action finishes. Only one attack, cast, dodge, or weapon
-swap can be active at a time, and each weapon slows movement by its own amount
-during wind-up and recovery. The server also rate-limits input and action
-messages per connection so key spam cannot flood the simulation.
+Sprinting, weapons, shield dodges, and spells consume the same stamina pool.
+Sprinting is 1.4× walking speed and drains 20 stamina per second. Releasing the
+movement keys or exhausting stamina returns the player to walking speed;
+stamina then regenerates after its short delay, including while walking. An
+exhausted sprint stays locked until 20 stamina has recovered. Only one attack,
+cast, dodge, or weapon swap can be active at a time, and each weapon slows
+movement by its own amount during wind-up and recovery. The server also
+rate-limits input and action messages per connection so key spam cannot flood
+the simulation.
 
 Each generated level also contains one animated red battle portal at a seeded
 random valid floor tile in the map's outer area, outside the battle destination
@@ -229,6 +237,9 @@ The detailed architecture reference is [ARCHITECTURE.md](ARCHITECTURE.md).
   players. Frost slows on a real hit, Ember splashes nearby targets, and Mend
   heals only after its windup completes. Throwing Knives use the same travel
   model but land as recoverable floor items after impact or range expiry.
+- Inventory slots show remaining equipment condition, spell casts, and the
+  circulation timer for cache rewards. Dropping an item or losing it on death
+  preserves that lifecycle; it never resets ownership limits.
 
 ## Known gaps in this pass
 
@@ -249,9 +260,5 @@ The detailed architecture reference is [ARCHITECTURE.md](ARCHITECTURE.md).
   already tracks stairs; client doesn't use them to change level yet).
 - Persistent player identity across reconnects.
 - Balance pass on cache boon ranges, weapon/spell stats.
-- Server-authoritative item lifecycles: equipment wears down, spells expire,
-  and consumed or expired rewards release their source cache to regenerate at
-  a new valid random location. This is intended to circulate desirable rewards
-  between players instead of allowing permanent inventory hoarding.
 - Mobile/touch controls for participants.
 - DM view: pan/zoom and multi-level switching once dungeons exceed 1 level.

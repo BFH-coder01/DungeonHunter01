@@ -3,11 +3,13 @@
 
 export const AMBIENT_POINT_MIN = 12;
 export const AMBIENT_BASE_AREA = 64 * 44;
-// Preserve the original 12-point count at 64x44, then scale with the map's
-// linear size. The current map is 3x wider and taller, so it gets 36 points.
+// Preserve the original 12-point count at 64x44. Larger maps scale with linear
+// size plus a 25% dense-layout factor because the current corridor network
+// makes substantially more of their area reachable.
 export function ambientPointCount(width, height) {
   const linearScale = Math.sqrt((width * height) / AMBIENT_BASE_AREA);
-  return Math.max(AMBIENT_POINT_MIN, Math.ceil(AMBIENT_POINT_MIN * linearScale));
+  const layoutScale = linearScale > 1 ? 1.25 : 1;
+  return Math.max(AMBIENT_POINT_MIN, Math.ceil(AMBIENT_POINT_MIN * linearScale * layoutScale));
 }
 // Ambient tuning lives here so generation, server delivery, and browser audio
 // stay in sync. Gain only affects ambience; footsteps keep their own levels.

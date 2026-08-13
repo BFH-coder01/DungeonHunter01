@@ -13,8 +13,9 @@ The design deliberately separates two clients:
 
 - The **player UI** is a first-person participant with a filtered game-state
   snapshot and a personal exploration map.
-- The **DungeonMaster UI** is a read-only spectator with the complete map,
-  cache, sound-point, projectile, and player state for the current v0.1 level.
+- The **DungeonMaster UI** has the complete map, cache, sound-point, projectile,
+  and player state plus unauthenticated live balance controls for this trusted
+  test build.
 
 ## Runtime topology
 
@@ -50,8 +51,8 @@ HTTP and WebSocket traffic default to port 8080.
 2. `Game` chooses a seed and generates all configured levels, caches, spawns,
    stairs, and sound points.
 3. HTTP exposes `public/` and selected ES modules from `src/shared/`.
-4. Each WebSocket becomes exactly one player (`join`) or read-only
-   DungeonMaster (`spectate`).
+4. Each WebSocket becomes exactly one player (`join`) or DungeonMaster
+   (`spectate`). A spectator may submit validated `dm_settings` updates.
 5. Every 50 ms the server advances the game, sends a tailored snapshot to each
    connection, and then clears delivered events.
 
@@ -59,12 +60,15 @@ All state is in memory. Restarting creates a new game and disconnects players.
 
 ## Protocol and authority
 
-Clients send `join`, `spectate`, movement `input`, and discrete `action`
-messages. Actions cover attacking, casting, pickup/drop, equip, and slot moves.
+Clients send `join`, `spectate`, movement `input`, discrete `action`, and DM
+`dm_settings` messages. Actions cover attacking, casting, pickup/drop, equip,
+and slot moves. DM settings are accepted only from a spectator connection and
+validated against fixed server ranges.
 The server clamps movement input and validates inventory ownership, timing,
 range, collision, mana, cooldowns, damage, and resulting state.
 
-The server sends `welcome` metadata and 20 Hz role-specific `state` snapshots.
+The server sends `welcome` metadata, live `settings` updates, and 20 Hz
+role-specific `state` snapshots.
 The browser never asserts position, health, damage, inventory, cache state,
 projectile hits, or kills. Mouse-look is predicted locally for responsiveness;
 the stored aim and every gameplay consequence remain authoritative on server.
@@ -176,24 +180,23 @@ wall. A throwing knife loses durability only when its projectile reaches a
 player or wall; a miss, range expiry, or unopened-cache collision does not wear
 it. Shield dodges remove one durability. Every completed spell cast removes one
 cast regardless of whether its effect later hits a target. Zero-condition
-equipment and zero-cast spells are removed and automatically unequipped. The
-player snapshot exposes only the remaining public condition, casts, and
-cache-reward lifetime needed by the inventory HUD.
+equipment and zero-cast spells are removed and automatically unequipped.
+Weapons, shields, and spells have no wall-clock expiry: unused items remain
+available until qualifying wear or casts exhaust them.
 
-Opening a cache stamps its reward with the source cache and level plus an
-absolute expiry time: five minutes for equipment and four minutes for spells.
-This wall-clock limit is preserved through inventory transfers, manual drops,
-death drops, and recoverable knife throws, so moving an item never renews it.
-Immediate boons complete their lifecycle when applied. Starter equipment uses
-durability/casts but has no source cache or wall-clock circulation deadline.
+Boons apply immediately for two minutes. Active modifiers and their remaining
+time are included in the player snapshot and HUD. On expiry the server
+recalculates the attribute from its original value plus the remaining active
+boons, avoiding accumulated rounding and clamp errors.
 
-When a sourced reward breaks, runs out of casts, expires anywhere in
-circulation, or disappears with a disconnected player, its source cache enters
+When a sourced item breaks, runs out of casts, a boon expires, or a reward
+disappears with a disconnected player, its source cache enters
 an 8–16 second seeded-random regeneration delay. It then moves at least 12
 tiles from its prior position to a floor tile separated from active caches,
 portals, and players, and rolls a fresh reward. A cache tracks the UID of its
 one outstanding reward, making completion idempotent and preventing duplicate
-regeneration. These values live under `CONFIG.rewards` for balance tuning.
+regeneration. Boon duration and cache timing live under `CONFIG.rewards`;
+equipment durability and spell cast counts live in the item catalogue.
 
 ## Rendering and audio
 

@@ -10,6 +10,17 @@ import { generateDungeon, tileAt } from './dungeon.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+const RUNTIME_SETTING_LIMITS = {
+  staminaRegenPerSec: [0, 50],
+  staminaRegenDelayMs: [0, 10_000],
+  movementSpeedScale: [0.25, 3],
+  movementStaminaPerSec: [0, 100],
+  boonLifetimeMs: [5_000, 30 * 60_000],
+  cacheRespawnMinMs: [0, 5 * 60_000],
+  cacheRespawnMaxMs: [0, 5 * 60_000],
+  battlePortalCooldownMs: [0, 10 * 60_000],
+};
+
 export class Game {
   constructor(seed = randomSeed()) {
     this.seed = seed;
@@ -24,6 +35,17 @@ export class Game {
     this.nextProjectileId = 1;
     this.events = []; // drained every tick, fanned out to clients
     this.tickCount = 0;
+    this.defaultSettings = Object.freeze({
+      staminaRegenPerSec: CONFIG.player.staminaRegenPerSec,
+      staminaRegenDelayMs: CONFIG.player.staminaRegenDelayMs,
+      movementSpeedScale: CONFIG.player.movementSpeedScale,
+      movementStaminaPerSec: CONFIG.player.movementStaminaPerSec,
+      boonLifetimeMs: CONFIG.rewards.boonLifetimeMs,
+      cacheRespawnMinMs: CONFIG.rewards.cacheRespawnDelayMs[0],
+      cacheRespawnMaxMs: CONFIG.rewards.cacheRespawnDelayMs[1],
+      battlePortalCooldownMs: CONFIG.combat.battlePortalCooldownMs,
+    });
+    this.settings = { ...this.defaultSettings };
     for (let i = 0; i < levels.length; i++) {
       this.groundItems.set(i, []);
       this.entityRevisions.set(i, 0);
@@ -38,6 +60,35 @@ export class Game {
     this.entityRevisions.set(levelIndex, this.entityRevision(levelIndex) + 1);
   }
 
+  runtimeSettings() {
+    return { ...this.settings };
+  }
+
+  updateRuntimeSettings(changes) {
+    if (!changes || typeof changes !== 'object' || Array.isArray(changes)) {
+      return { ok: false, error: 'Settings payload must be an object.' };
+    }
+    const next = { ...this.settings };
+    for (const [key, value] of Object.entries(changes)) {
+      const limits = RUNTIME_SETTING_LIMITS[key];
+      if (!limits) return { ok: false, error: `Unknown setting: ${key}` };
+      if (!Number.isFinite(value) || value < limits[0] || value > limits[1]) {
+        return { ok: false, error: `${key} must be between ${limits[0]} and ${limits[1]}.` };
+      }
+      next[key] = value;
+    }
+    if (next.cacheRespawnMinMs > next.cacheRespawnMaxMs) {
+      return { ok: false, error: 'Minimum chest delay cannot exceed the maximum.' };
+    }
+    this.settings = next;
+    return { ok: true, settings: this.runtimeSettings() };
+  }
+
+  resetRuntimeSettings() {
+    this.settings = { ...this.defaultSettings };
+    return { ok: true, settings: this.runtimeSettings() };
+  }
+
   // --- players ----------------------------------------------------------
 
   addPlayer(id, name) {
@@ -45,6 +96,8 @@ export class Game {
     const r = this.rng;
     const maxHealth = Math.round(r.float(p.health[0], p.health[1]));
     const maxMana = Math.round(r.float(p.mana[0], p.mana[1]));
+    const speed = Math.round(r.float(p.speed[0], p.speed[1]) * 10) / 10;
+    const manaRegenPerSec = Math.round(r.float(p.manaRegenPerSec[0], p.manaRegenPerSec[1]) * 10) / 10;
 
     const starterWeapon = makeWeapon('rusted_dagger');
     const starterSpell = makeSpell('spark');
@@ -69,8 +122,10 @@ export class Game {
       staminaRegenAt: 0,
       staminaNoticeAt: 0,
       moving: false,
-      speed: Math.round(r.float(p.speed[0], p.speed[1]) * 10) / 10,
-      manaRegenPerSec: Math.round(r.float(p.manaRegenPerSec[0], p.manaRegenPerSec[1]) * 10) / 10,
+      speed,
+      manaRegenPerSec,
+      baseAttributes: { maxHealth, maxMana, speed, manaRegenPerSec },
+      activeBoons: [],
       inventory,
       leftHandUid: starterWeapon.uid,
       rightHandUid: null,
@@ -106,6 +161,7 @@ export class Game {
       for (const item of player.inventory) {
         if (item) this.completeReward(item, now);
       }
+      for (const boon of player.activeBoons) this.completeReward(boon, now);
     }
     this.players.delete(id);
   }
@@ -234,14 +290,14 @@ export class Game {
     }
     const canMove = actionScale > 0 && player.stamina > 0;
     player.moving = false;
-    player.staminaRegenAt = now + CONFIG.player.staminaRegenDelayMs;
+    player.staminaRegenAt = now + this.settings.staminaRegenDelayMs;
     if (!canMove) return;
     mx /= len;
     my /= len;
 
     const level = this.levels[player.level];
     const speedScale = now < player.slowUntil ? 0.55 : 1;
-    const step = player.speed * speedScale * actionScale * CONFIG.player.movementSpeedScale * dt;
+    const step = player.speed * speedScale * actionScale * this.settings.movementSpeedScale * dt;
     const nx = player.x + mx * step;
     const ny = player.y + my * step;
 
@@ -251,7 +307,7 @@ export class Game {
     if (!this.blocked(level, player.x, ny)) player.y = ny;
     player.moving = player.x !== beforeX || player.y !== beforeY;
     if (player.moving) {
-      player.stamina = Math.max(0, player.stamina - CONFIG.player.movementStaminaPerSec * dt);
+      player.stamina = Math.max(0, player.stamina - this.settings.movementStaminaPerSec * dt);
     }
   }
 
@@ -269,7 +325,7 @@ export class Game {
     const level = this.levels[trigger.level];
     const portal = level.battlePortal;
     if (!portal || !level.battleSpawns.length) return;
-    portal.cooldownUntil = now + CONFIG.combat.battlePortalCooldownMs;
+    portal.cooldownUntil = now + this.settings.battlePortalCooldownMs;
 
     const fighters = Array.from(this.players.values())
       .filter((player) => player.alive && player.level === trigger.level);
@@ -435,7 +491,7 @@ export class Game {
       return false;
     }
     player.stamina -= amount;
-    player.staminaRegenAt = now + CONFIG.player.staminaRegenDelayMs;
+    player.staminaRegenAt = now + this.settings.staminaRegenDelayMs;
     return true;
   }
 
@@ -775,10 +831,8 @@ export class Game {
     item.sourceCacheId = cache.id;
     item.sourceLevel = levelIndex;
     item.lifecycleComplete = false;
-    if (item.kind === 'spell') item.expiresAt = now + CONFIG.rewards.spellLifetimeMs;
-    else if (item.kind === 'weapon' || item.kind === 'shield') {
-      item.expiresAt = now + CONFIG.rewards.equipmentLifetimeMs;
-    }
+    if (item.kind === 'boon') item.expiresAt = now + this.settings.boonLifetimeMs;
+    else delete item.expiresAt;
   }
 
   completeReward(item, now) {
@@ -787,13 +841,25 @@ export class Game {
     const level = this.levels[item.sourceLevel];
     const cache = level?.caches.find((entry) => entry.id === item.sourceCacheId);
     if (!cache || cache.rewardUid !== item.uid) return;
-    const [minDelay, maxDelay] = CONFIG.rewards.cacheRespawnDelayMs;
+    const minDelay = this.settings.cacheRespawnMinMs;
+    const maxDelay = this.settings.cacheRespawnMaxMs;
     cache.rewardUid = null;
     cache.respawnAt = now + this.rng.int(minDelay, maxDelay);
   }
 
   expireLifecycleItems(now) {
     for (const player of this.players.values()) {
+      const expiredAttrs = new Set();
+      for (let i = player.activeBoons.length - 1; i >= 0; i--) {
+        const boon = player.activeBoons[i];
+        if (now < boon.expiresAt) continue;
+        player.activeBoons.splice(i, 1);
+        expiredAttrs.add(boon.attr);
+        this.completeReward(boon, now);
+        this.emit(player, 'expired', { name: boon.name, reason: 'boon' });
+      }
+      for (const attr of expiredAttrs) this.recalculateBoonAttribute(player, attr);
+
       for (const item of player.inventory.slice()) {
         if (!item?.expiresAt || now < item.expiresAt) continue;
         this.removeInventoryItem(player, item.uid, true);
@@ -881,7 +947,6 @@ export class Game {
       cache.respawnAt = 0;
       this.bindCacheReward(item, cache, player.level, now);
       this.giveItem(player, item, now);
-      if (item.kind === 'boon') this.completeReward(item, now);
       this.markEntitiesChanged(player.level);
       return;
     }
@@ -921,9 +986,20 @@ export class Game {
       console.warn(`[boon] no clamp range configured for attr "${item.attr}" — skipping`);
       return;
     }
-    player[item.attr] = clamp(Math.round((player[item.attr] + item.delta) * 10) / 10, range[0], range[1]);
-    if (item.attr === 'maxHealth') player.health = Math.min(player.health, player.maxHealth);
-    if (item.attr === 'maxMana') player.mana = Math.min(player.mana, player.maxMana);
+    player.activeBoons.push(item);
+    this.recalculateBoonAttribute(player, item.attr);
+  }
+
+  recalculateBoonAttribute(player, attr) {
+    const range = CONFIG.player.clamp[attr];
+    const base = player.baseAttributes[attr];
+    if (!range || !Number.isFinite(base)) return;
+    const delta = player.activeBoons
+      .filter((boon) => boon.attr === attr)
+      .reduce((sum, boon) => sum + boon.delta, 0);
+    player[attr] = clamp(Math.round((base + delta) * 10) / 10, range[0], range[1]);
+    if (attr === 'maxHealth') player.health = Math.min(player.health, player.maxHealth);
+    if (attr === 'maxMana') player.mana = Math.min(player.mana, player.maxMana);
   }
 
   doDrop(player, uid, now) {
@@ -999,7 +1075,7 @@ export class Game {
       player.mana = Math.min(player.maxMana, player.mana + player.manaRegenPerSec * dt);
       if (!player.moving && Math.hypot(player.move.x, player.move.y) < 0.001 &&
           now >= player.staminaRegenAt && !this.combatActionActive(player, now)) {
-        player.stamina = Math.min(player.maxStamina, player.stamina + CONFIG.player.staminaRegenPerSec * dt);
+        player.stamina = Math.min(player.maxStamina, player.stamina + this.settings.staminaRegenPerSec * dt);
       }
 
       // Vision is the expensive part; 5Hz is plenty for map reveal.
@@ -1022,7 +1098,8 @@ export class Game {
       height: level.height,
       inventorySize: CONFIG.player.inventorySize,
       inventorySideSize: CONFIG.player.inventorySideSize,
-      movementSpeedScale: CONFIG.player.movementSpeedScale,
+      movementSpeedScale: this.settings.movementSpeedScale,
+      settings: this.runtimeSettings(),
     };
   }
 
@@ -1085,6 +1162,13 @@ export class Game {
         moving: player.moving,
         speed: player.speed,
         manaRegenPerSec: player.manaRegenPerSec,
+        boons: player.activeBoons.map((boon) => ({
+          uid: boon.uid,
+          name: boon.name,
+          attr: boon.attr,
+          delta: boon.delta,
+          lifeSeconds: Math.max(0, Math.ceil((boon.expiresAt - now) / 1000)),
+        })),
         alive: player.alive,
         respawnIn: player.alive ? 0 : Math.max(0, player.respawnAt - now),
         swapRemaining: Math.max(0, player.swapUntil - now),
@@ -1115,8 +1199,8 @@ export class Game {
   }
 
   // --- DungeonMaster / spectator ----------------------------------------
-  // The DM is an observer, not a combatant: no fog, no character, sees the
-  // whole level and every player on it regardless of the `revealAll` test flag.
+  // The DM is not a combatant: no fog, no character, and complete level state.
+  // Its separate socket may also update validated test-session settings.
 
   dmWelcome(levelIndex = 0) {
     const level = this.levels[levelIndex] ?? this.levels[0];
@@ -1127,6 +1211,7 @@ export class Game {
       width: level.width,
       height: level.height,
       // sent once in full — the DM view never has fog to unfog
+      settings: this.runtimeSettings(),
       tiles: Array.from(level.tiles),
       soundPoints: level.soundPoints.map(publicSoundPoint),
     };

@@ -52,10 +52,14 @@ npm start
 
 ### DungeonMaster UI
 
-- Read-only full-level overview with no fog.
+- Full-level overview with no fog and a collapsible live Game Settings panel.
 - Shows every player, player name/health, cache, drop, movement/noise range,
   and all ambient sound points.
-- `MSG.SPECTATE` is currently trusted-LAN access with no authentication.
+- Spectators may send range-validated `MSG.DM_SETTINGS` updates for stamina,
+  movement, boon, chest, and battle-portal timing. The server broadcasts the
+  resulting `MSG.SETTINGS` state so player prediction stays synchronized.
+- `MSG.SPECTATE` and DM settings are currently trusted-LAN access with no
+  authentication; this is intentional for the test environment.
 
 ### Audio
 
@@ -164,14 +168,15 @@ Spell/projectile foundation:
   or wall. Throwing knives wear only on player/wall projectile impact; misses,
   range expiry, and cache collisions do not count. Shields wear on each dodge.
   Spells have a finite cast count, consumed whenever the cast resolves, whether
-  or not an offensive projectile later hits. Cache rewards also
-  carry an absolute circulation deadline that survives drops, death, transfer,
-  and recoverable throws.
+  or not an offensive projectile later hits. Equipment and spells do not
+  expire while idle; only qualifying wear and completed casts consume them.
+- Boons are temporary server-owned effects. Their two-minute timer is visible
+  in the HUD, and the affected attribute is recalculated when each effect ends.
 - Every cache reward records its source cache. When that exact reward breaks,
-  exhausts, expires, or leaves with a disconnected player, the cache waits a
+  exhausts, a boon expires, or a reward leaves with a disconnected player, the cache waits a
   randomized delay, relocates to another valid separated floor tile, and rolls
   a fresh item. Keep completion idempotent via the outstanding reward UID.
-- Lifecycle tuning belongs in `CONFIG.rewards`; per-item durability and cast
+- Boon/cache lifecycle tuning belongs in `CONFIG.rewards`; per-item durability and cast
   counts belong in `src/shared/items.js`. Do not reset lifecycle fields during
   pickup or drop operations.
 

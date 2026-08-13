@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { Game } from '../src/server/game.js';
 import { ACTION, TILE } from '../src/shared/constants.js';
-import { makeShield, makeWeapon } from '../src/shared/items.js';
+import { makeShield, makeSpell, makeWeapon } from '../src/shared/items.js';
 import { consumeRateLimit } from '../src/server/rate-limit.js';
 import { tileAt } from '../src/server/dungeon.js';
 import { ambientPointCount } from '../src/shared/sounds.js';
@@ -92,6 +92,30 @@ test('stamina regenerates only after its delay and active action finish', () => 
   assert.equal(player.stamina, 93);
 });
 
+test('Dungeon Master runtime settings apply immediately and reject invalid values', () => {
+  const { game, player } = playerGame(45789);
+  const result = game.updateRuntimeSettings({
+    staminaRegenPerSec: 4,
+    staminaRegenDelayMs: 2_000,
+    movementSpeedScale: 1.1,
+    movementStaminaPerSec: 6,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(game.runtimeSettings().staminaRegenPerSec, 4);
+
+  player.stamina = 50;
+  player.staminaRegenAt = 0;
+  game.tick(1, 10_000);
+  assert.equal(player.stamina, 54);
+
+  const invalid = game.updateRuntimeSettings({ cacheRespawnMinMs: 20_000, cacheRespawnMaxMs: 10_000 });
+  assert.equal(invalid.ok, false);
+  assert.equal(game.runtimeSettings().cacheRespawnMinMs, CONFIG.rewards.cacheRespawnDelayMs[0]);
+
+  game.resetRuntimeSettings();
+  assert.equal(game.runtimeSettings().staminaRegenPerSec, CONFIG.player.staminaRegenPerSec);
+});
+
 test('equipment loses durability on a wall strike and breaks at zero', () => {
   const { game, player } = playerGame(11223);
   const weapon = player.inventory[0];
@@ -171,7 +195,25 @@ test('a spell disappears after its final configured cast', () => {
   assert.ok(game.drainEvents(player.id).some((event) => event.kind === 'expired' && event.reason === 'casts'));
 });
 
-test('dropping a cache reward does not reset expiry and its chest relocates', () => {
+test('a cache spell does not expire while unused', () => {
+  const { game, player } = playerGame(22445);
+  const cache = game.levels[0].caches[0];
+  cache.item = makeSpell('frost_lance');
+  player.x = cache.x;
+  player.y = cache.y;
+  const now = 48_000;
+
+  game.handleAction(player, { action: ACTION.PICKUP }, now);
+  const spell = game.findItem(player, cache.rewardUid);
+  assert.ok(spell);
+  assert.equal(spell.expiresAt, undefined);
+
+  game.tick(0, now + 60 * 60_000);
+  assert.equal(game.findItem(player, spell.uid), spell);
+  assert.equal(cache.respawnAt, 0);
+});
+
+test('cache equipment does not expire while idle and its chest waits for wear', () => {
   const { game, player } = playerGame(33445);
   const level = game.levels[0];
   const cache = level.caches[0];
@@ -185,23 +227,63 @@ test('dropping a cache reward does not reset expiry and its chest relocates', ()
   const reward = game.findItem(player, cache.rewardUid);
   assert.ok(reward);
   assert.equal(reward.sourceCacheId, cache.id);
-  assert.equal(reward.expiresAt, now + CONFIG.rewards.equipmentLifetimeMs);
-
-  game.handleAction(player, { action: ACTION.DROP, uid: reward.uid }, now + 1);
-  const drop = game.groundItems.get(0).find((entry) => entry.uid === reward.uid);
-  assert.equal(drop.item.expiresAt, reward.expiresAt);
+  assert.equal(reward.expiresAt, undefined);
   assert.equal(cache.looted, true);
   assert.equal(cache.respawnAt, 0);
 
-  game.tick(0, reward.expiresAt);
-  assert.equal(game.groundItems.get(0).some((entry) => entry.uid === reward.uid), false);
-  assert.ok(cache.respawnAt > reward.expiresAt);
+  const muchLater = now + 60 * 60_000;
+  game.tick(0, muchLater);
+  assert.equal(game.findItem(player, reward.uid), reward);
+  assert.equal(cache.respawnAt, 0);
+
+  reward.durability = 1;
+  player.leftHandUid = reward.uid;
+  faceAdjacentWall(game, player);
+  game.handleAction(player, { action: ACTION.ATTACK, hand: 'left' }, muchLater + 1);
+  game.tick(0, player.attackState.resolveAt);
+  assert.equal(game.findItem(player, reward.uid), null);
+  assert.ok(cache.respawnAt > muchLater);
 
   game.tick(0, cache.respawnAt);
   assert.equal(cache.looted, false);
   assert.ok(cache.item);
   assert.notEqual(cache.item.uid, reward.uid);
   assert.ok(Math.hypot(cache.x - original.x, cache.y - original.y) >= CONFIG.rewards.cacheMinRelocationDistance);
+});
+
+test('cache boons expire, restore the base attribute, and release their chest', () => {
+  const { game, player } = playerGame(33556);
+  const cache = game.levels[0].caches[0];
+  cache.item = { uid: 'test-swift-boon', kind: 'boon', key: 'swift', name: 'Swiftfoot Oil', attr: 'speed', delta: 1 };
+  player.x = cache.x;
+  player.y = cache.y;
+  const baseSpeed = player.baseAttributes.speed;
+  const now = 51_000;
+
+  game.handleAction(player, { action: ACTION.PICKUP }, now);
+  assert.equal(player.speed, baseSpeed + 1);
+  assert.equal(player.activeBoons.length, 1);
+  assert.equal(player.activeBoons[0].expiresAt, now + CONFIG.rewards.boonLifetimeMs);
+  assert.equal(cache.respawnAt, 0);
+
+  game.tick(0, now + CONFIG.rewards.boonLifetimeMs);
+  assert.equal(player.speed, baseSpeed);
+  assert.equal(player.activeBoons.length, 0);
+  assert.ok(cache.respawnAt > now + CONFIG.rewards.boonLifetimeMs);
+  assert.ok(game.drainEvents(player.id).some((event) => event.kind === 'expired' && event.reason === 'boon'));
+});
+
+test('overlapping boons expire independently without losing the remaining effect', () => {
+  const { game, player } = playerGame(33667);
+  const baseSpeed = player.baseAttributes.speed;
+  game.applyBoon(player, { uid: 'swift-a', kind: 'boon', name: 'Swift A', attr: 'speed', delta: 1, expiresAt: 60_000 });
+  game.applyBoon(player, { uid: 'swift-b', kind: 'boon', name: 'Swift B', attr: 'speed', delta: 2, expiresAt: 70_000 });
+  assert.equal(player.speed, baseSpeed + 3);
+
+  game.tick(0, 60_000);
+  assert.equal(player.speed, baseSpeed + 2);
+  game.tick(0, 70_000);
+  assert.equal(player.speed, baseSpeed);
 });
 
 test('token bucket drops floods and refills over time', () => {

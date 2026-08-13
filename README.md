@@ -10,9 +10,9 @@ There are two ways to view the dungeon:
 - **Participant view** (`/`) — first-person. You're in the dungeon: a
   raycasted wireframe view of corridors and rooms, WASD movement, mouse-look,
   inventory, HUD, the works.
-- **DungeonMaster view** (`/dm.html`) — spectator. A top-down overview of the
-  whole level and every adventurer on it, live. No character, no fog — this
-  is the "big screen" for whoever's hosting.
+- **DungeonMaster view** (`/dm.html`) — a top-down overview of the whole level
+  and every adventurer, plus live test-session balance controls. No character
+  and no fog — this is the "big screen" for whoever's hosting.
 
 ## v01 scope
 
@@ -145,8 +145,12 @@ All portal locations are sent to every player as global navigation landmarks.
 Distant portals clamp to the edge of the minimap as directional markers, and
 nearby portal glow remains visible through walls.
 
-The DungeonMaster view has no controls — it's a read-only overview. Just open
-`/dm.html` and watch.
+The DungeonMaster view includes a collapsible **Game Settings** panel. It can
+change stamina regeneration and delay, movement drain and speed, boon lifetime,
+chest regeneration delay, and battle-portal cooldown without restarting. Apply
+updates the running authoritative simulation and Reset restores values from
+`src/shared/config.js`. This trusted test build deliberately has no DM
+authentication yet.
 
 ## Ambient sound
 
@@ -238,9 +242,10 @@ The detailed architecture reference is [ARCHITECTURE.md](ARCHITECTURE.md).
   players. Frost slows on a real hit, Ember splashes nearby targets, and Mend
   heals only after its windup completes. Throwing Knives use the same travel
   model but land as recoverable floor items after impact or range expiry.
-- Inventory slots show remaining equipment condition, spell casts, and the
-  circulation timer for cache rewards. Dropping an item or losing it on death
-  preserves that lifecycle; it never resets ownership limits.
+- Inventory slots show remaining equipment condition and spell casts. Weapons,
+  shields, and spells do not expire while idle; their source chest waits until
+  wear or casts exhaust them. Temporary boons show their remaining two-minute
+  lifetime in the HUD and release their source chest when the effect ends.
 
 ## Known gaps in this pass
 

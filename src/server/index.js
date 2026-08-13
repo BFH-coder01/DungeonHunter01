@@ -107,6 +107,20 @@ wss.on('connection', (ws) => {
       return;
     }
 
+    if (msg.type === MSG.DM_SETTINGS) {
+      if (!ws.isSpectator || !consumeRateLimit(rateLimits, 'settings', 8, 4, receivedAt)) return;
+      const result = msg.reset ? game.resetRuntimeSettings() : game.updateRuntimeSettings(msg.settings);
+      if (!result.ok) {
+        send(ws, { type: MSG.SETTINGS, settings: game.runtimeSettings(), error: result.error });
+        return;
+      }
+      for (const client of wss.clients) {
+        send(client, { type: MSG.SETTINGS, settings: result.settings });
+      }
+      console.log('[settings] DungeonMaster updated live balance settings');
+      return;
+    }
+
     if (!player) return;
 
     if (msg.type === MSG.INPUT) {

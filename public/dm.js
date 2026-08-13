@@ -1,15 +1,18 @@
 import { TILE, MSG } from '/shared/constants.js';
 
 // ---------------------------------------------------------------------
-// The DungeonMaster view is a pure observer: no character, no fog, whole
-// level visible always, every living player shown at once. It fits the
-// entire level into the viewport rather than following anyone.
+// The DungeonMaster has no character or fog and sees every player. In the
+// trusted test build it can also update validated runtime balance settings.
 // ---------------------------------------------------------------------
 
 const canvas = document.getElementById('view');
 const ctx = canvas.getContext('2d');
 const infoEl = document.getElementById('dmInfo');
 const rosterEl = document.getElementById('dmRoster');
+const controlsToggle = document.getElementById('dmControlsToggle');
+const settingsForm = document.getElementById('dmSettingsForm');
+const settingsReset = document.getElementById('dmSettingsReset');
+const settingsStatus = document.getElementById('dmSettingsStatus');
 
 let width = 0, height = 0;
 let tiles = new Uint8Array(0);
@@ -47,6 +50,24 @@ ws.addEventListener('message', (evt) => {
   const msg = JSON.parse(evt.data);
   if (msg.type === MSG.WELCOME) return onWelcome(msg);
   if (msg.type === MSG.STATE) return onState(msg);
+  if (msg.type === MSG.SETTINGS) return onSettings(msg);
+});
+
+controlsToggle.addEventListener('click', () => settingsForm.classList.toggle('hidden'));
+settingsForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!settingsForm.reportValidity() || ws.readyState !== WebSocket.OPEN) return;
+  const settings = {};
+  for (const input of settingsForm.querySelectorAll('[data-setting]')) {
+    settings[input.dataset.setting] = Number(input.value) * Number(input.dataset.scale || 1);
+  }
+  settingsStatus.textContent = 'Applyingâ€¦';
+  ws.send(JSON.stringify({ type: MSG.DM_SETTINGS, settings }));
+});
+settingsReset.addEventListener('click', () => {
+  if (ws.readyState !== WebSocket.OPEN) return;
+  settingsStatus.textContent = 'Resettingâ€¦';
+  ws.send(JSON.stringify({ type: MSG.DM_SETTINGS, reset: true }));
 });
 
 function onWelcome(msg) {
@@ -57,7 +78,22 @@ function onWelcome(msg) {
   height = msg.height;
   tiles = Uint8Array.from(msg.tiles);
   soundPoints = msg.soundPoints || [];
+  renderSettings(msg.settings);
   requestAnimationFrame(loop);
+}
+
+function onSettings(msg) {
+  renderSettings(msg.settings);
+  settingsStatus.textContent = msg.error || 'Live settings applied.';
+  settingsStatus.classList.toggle('error', Boolean(msg.error));
+}
+
+function renderSettings(settings) {
+  if (!settings) return;
+  for (const input of settingsForm.querySelectorAll('[data-setting]')) {
+    const value = settings[input.dataset.setting];
+    if (Number.isFinite(value)) input.value = String(value / Number(input.dataset.scale || 1));
+  }
 }
 
 function onState(msg) {

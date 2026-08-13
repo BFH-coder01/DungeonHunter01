@@ -67,6 +67,10 @@ function onMessage(evt) {
   const msg = JSON.parse(evt.data);
   if (msg.type === MSG.WELCOME) return onWelcome(msg);
   if (msg.type === MSG.STATE) return onState(msg);
+  if (msg.type === MSG.SETTINGS) {
+    movementSpeedScale = msg.settings?.movementSpeedScale || 1;
+    log('Dungeon Master updated the game settings.', 'good');
+  }
 }
 
 let viewAngleInit = false;
@@ -75,7 +79,7 @@ function onWelcome(msg) {
   width = msg.width;
   height = msg.height;
   map = new Int8Array(width * height).fill(-1);
-  movementSpeedScale = msg.movementSpeedScale || 1;
+  movementSpeedScale = msg.settings?.movementSpeedScale || msg.movementSpeedScale || 1;
   joinOverlay.classList.add('hidden');
   hud.classList.remove('hidden');
   log(`Dungeon seed ${msg.seed} — level ${msg.level + 1}/${msg.totalLevels}${msg.revealAll ? ' (full map test mode)' : ''}`, 'good');
@@ -253,6 +257,7 @@ const staminaText = document.getElementById('staminaText');
 const spdText = document.getElementById('spdText');
 const lvlText = document.getElementById('lvlText');
 const kdText = document.getElementById('kdText');
+const boonsEl = document.getElementById('boons');
 const deadBanner = document.getElementById('deadBanner');
 const respawnIn = document.getElementById('respawnIn');
 const swapBanner = document.getElementById('swapBanner');
@@ -271,6 +276,12 @@ function updateHud() {
   spdText.textContent = `${self.speed.toFixed(1)}${self.moving ? ' RUN' : ''}`;
   lvlText.textContent = self.level + 1;
   kdText.textContent = `${self.kills}/${self.deaths}`;
+  boonsEl.innerHTML = (self.boons || []).map((boon) => {
+    const sign = boon.delta > 0 ? '+' : '';
+    const minutes = Math.floor(boon.lifeSeconds / 60);
+    const seconds = String(boon.lifeSeconds % 60).padStart(2, '0');
+    return `<div class="${boon.delta >= 0 ? 'good' : 'bad'}">${boon.name}: ${sign}${boon.delta} ${boon.attr} · ${minutes}:${seconds}</div>`;
+  }).join('');
 
   deadBanner.classList.toggle('hidden', self.alive);
   if (!self.alive) respawnIn.textContent = (self.respawnIn / 1000).toFixed(1);

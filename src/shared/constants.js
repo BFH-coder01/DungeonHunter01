@@ -24,9 +24,11 @@ export const MSG = {
   MAP: 'map',
   STATE: 'state',
   EVENT: 'event',
+  SETTINGS: 'settings',
   // client -> server
   JOIN: 'join',
   SPECTATE: 'spectate', // DungeonMaster view: observe, no character
+  DM_SETTINGS: 'dm_settings', // test-build live balance controls
   INPUT: 'input',
   ACTION: 'action',
 };

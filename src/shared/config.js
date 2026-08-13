@@ -67,11 +67,11 @@ export const CONFIG = {
     linkPortalRadius: 0.6,
   },
 
-  // Cache rewards stay scarce but circulate. Use-based limits can finish an
-  // item early; the wall-clock limit prevents unused rewards being hoarded.
+  // Cache rewards stay scarce but circulate. Equipment and spells return
+  // through use-based wear; boons are temporary and return when their effect
+  // ends.
   rewards: {
-    equipmentLifetimeMs: 5 * 60_000,
-    spellLifetimeMs: 4 * 60_000,
+    boonLifetimeMs: 2 * 60_000,
     cacheRespawnDelayMs: [8_000, 16_000],
     cacheMinSeparation: 5,
     cacheMinRelocationDistance: 12,

@@ -1,4 +1,4 @@
-import { TILE, MSG, ACTION, SIGHT_RADIUS } from '/shared/constants.js';
+import { TILE, MSG, ACTION, SIGHT_RADIUS, PLAYER_RADIUS } from '/shared/constants.js';
 import { createAmbientAudio } from '/audio.js';
 
 // ---------------------------------------------------------------------
@@ -12,6 +12,10 @@ let self = null;
 let others = new Map();
 let caches = new Map();
 let drops = new Map();
+let projectiles = new Map();
+let battlePortal = null;
+let linkPortals = new Map();
+let movementSpeedScale = 1;
 
 const audio = createAmbientAudio();
 const prevOthersPos = new Map(); // player id -> {x,y}, used to detect movement for footstep audio
@@ -50,7 +54,11 @@ function doJoin() {
     ws.send(JSON.stringify({ type: MSG.JOIN, name }));
   });
   ws.addEventListener('message', onMessage);
-  ws.addEventListener('close', () => log('Disconnected from server.', 'bad'));
+  ws.addEventListener('close', () => {
+    if (inputTimer) clearInterval(inputTimer);
+    inputTimer = null;
+    log('Disconnected from server.', 'bad');
+  });
   joinBtn.disabled = true;
   joinBtn.textContent = 'Connecting…';
 }
@@ -59,6 +67,10 @@ function onMessage(evt) {
   const msg = JSON.parse(evt.data);
   if (msg.type === MSG.WELCOME) return onWelcome(msg);
   if (msg.type === MSG.STATE) return onState(msg);
+  if (msg.type === MSG.SETTINGS) {
+    movementSpeedScale = msg.settings?.movementSpeedScale || 1;
+    log('Dungeon Master updated the game settings.', 'good');
+  }
 }
 
 let viewAngleInit = false;
@@ -67,9 +79,12 @@ function onWelcome(msg) {
   width = msg.width;
   height = msg.height;
   map = new Int8Array(width * height).fill(-1);
+  movementSpeedScale = msg.settings?.movementSpeedScale || msg.movementSpeedScale || 1;
   joinOverlay.classList.add('hidden');
   hud.classList.remove('hidden');
   log(`Dungeon seed ${msg.seed} — level ${msg.level + 1}/${msg.totalLevels}${msg.revealAll ? ' (full map test mode)' : ''}`, 'good');
+  if (inputTimer) clearInterval(inputTimer);
+  inputTimer = setInterval(() => pumpInput(performance.now()), 50);
   requestAnimationFrame(loop);
 }
 
@@ -82,8 +97,11 @@ function onState(msg) {
   if (!viewAngleInit) { viewAngle = self.aim; viewAngleInit = true; }
 
   others = new Map(msg.others.map((o) => [o.id, o]));
-  caches = new Map(msg.caches.map((c) => [c.id, c]));
-  drops = new Map(msg.drops.map((d) => [d.uid, d]));
+  if (msg.caches) caches = new Map(msg.caches.map((c) => [c.id, c]));
+  if (msg.drops) drops = new Map(msg.drops.map((d) => [d.uid, d]));
+  projectiles = new Map((msg.projectiles || []).map((p) => [p.id, p]));
+  battlePortal = msg.battlePortal || null;
+  linkPortals = new Map((msg.linkPortals || []).map((p) => [p.id, p]));
 
   updateOtherFootsteps(msg.others);
 
@@ -126,8 +144,8 @@ canvas.addEventListener('mousedown', (e) => {
     canvas.requestPointerLock();
     return;
   }
-  if (e.button === 0) sendAction(ACTION.ATTACK);
-  if (e.button === 2) sendAction(ACTION.CAST);
+  if (e.button === 0) sendAction(ACTION.ATTACK, { hand: 'left' });
+  if (e.button === 2) sendAction(ACTION.ATTACK, { hand: 'right' });
 });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -166,15 +184,30 @@ function applyKeyTurn(dt) {
 }
 
 const keys = new Set();
+const MOVEMENT_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown']);
 window.addEventListener('keydown', (e) => {
   if (document.activeElement === nameInput) return;
-  keys.add(e.key.toLowerCase());
+  const key = e.key.toLowerCase();
+  keys.add(key);
+  if (!e.repeat && MOVEMENT_KEYS.has(key)) pumpInput(performance.now(), true);
+  if (!e.repeat && (e.code === 'KeyZ' || e.code === 'KeyM')) {
+    sendAction(ACTION.ATTACK, { hand: e.code === 'KeyZ' ? 'left' : 'right' });
+    e.preventDefault();
+  }
   if (e.key === 'e' || e.key === 'E' || e.key === 'o' || e.key === 'O') sendAction(ACTION.PICKUP);
   if (e.key === ' ') { sendAction(ACTION.CAST); e.preventDefault(); }
   const n = Number(e.key);
   if (n >= 1 && n <= 8) equipSlot(n - 1);
 });
-window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+window.addEventListener('keyup', (e) => {
+  const key = e.key.toLowerCase();
+  keys.delete(key);
+  if (MOVEMENT_KEYS.has(key)) pumpInput(performance.now(), true);
+});
+window.addEventListener('blur', () => {
+  keys.clear();
+  pumpInput(performance.now(), true);
+});
 
 function sendAction(action, extra) {
   if (!ws || ws.readyState !== ws.OPEN) return;
@@ -182,11 +215,9 @@ function sendAction(action, extra) {
 }
 
 let lastInputSent = 0;
-function pumpInput(now) {
-  if (!ws || ws.readyState !== ws.OPEN || !self) return;
-  if (now - lastInputSent < 50) return;
-  lastInputSent = now;
+let inputTimer = null;
 
+function movementVector() {
   let fb = 0, lr = 0;
   if (keys.has('w') || keys.has('arrowup')) fb += 1;
   if (keys.has('s') || keys.has('arrowdown')) fb -= 1;
@@ -202,7 +233,14 @@ function pumpInput(now) {
     const len = Math.hypot(mx, my);
     if (len > 0) { mx /= len; my /= len; }
   }
+  return { mx, my };
+}
 
+function pumpInput(now, force = false) {
+  if (!ws || ws.readyState !== ws.OPEN || !self) return;
+  if (!force && now - lastInputSent < 50) return;
+  lastInputSent = now;
+  const { mx, my } = movementVector();
   ws.send(JSON.stringify({ type: MSG.INPUT, mx, my, aim: viewAngle }));
 }
 
@@ -214,14 +252,18 @@ const hpFill = document.getElementById('hpFill');
 const hpText = document.getElementById('hpText');
 const mpFill = document.getElementById('mpFill');
 const mpText = document.getElementById('mpText');
+const staminaFill = document.getElementById('staminaFill');
+const staminaText = document.getElementById('staminaText');
 const spdText = document.getElementById('spdText');
 const lvlText = document.getElementById('lvlText');
 const kdText = document.getElementById('kdText');
+const boonsEl = document.getElementById('boons');
 const deadBanner = document.getElementById('deadBanner');
 const respawnIn = document.getElementById('respawnIn');
 const swapBanner = document.getElementById('swapBanner');
 const inventoryEl = document.getElementById('inventory');
 const logEl = document.getElementById('log');
+let inventorySignature = '';
 
 function updateHud() {
   if (!self) return;
@@ -229,9 +271,17 @@ function updateHud() {
   hpText.textContent = `HP ${self.health}/${self.maxHealth}`;
   mpFill.style.transform = `scaleX(${Math.max(0, self.mana / self.maxMana)})`;
   mpText.textContent = `MP ${self.mana}/${self.maxMana}`;
-  spdText.textContent = self.speed.toFixed(1);
+  staminaFill.style.transform = `scaleX(${Math.max(0, self.stamina / self.maxStamina)})`;
+  staminaText.textContent = `STA ${self.stamina}/${self.maxStamina}`;
+  spdText.textContent = `${self.speed.toFixed(1)}${self.moving ? ' RUN' : ''}`;
   lvlText.textContent = self.level + 1;
   kdText.textContent = `${self.kills}/${self.deaths}`;
+  boonsEl.innerHTML = (self.boons || []).map((boon) => {
+    const sign = boon.delta > 0 ? '+' : '';
+    const minutes = Math.floor(boon.lifeSeconds / 60);
+    const seconds = String(boon.lifeSeconds % 60).padStart(2, '0');
+    return `<div class="${boon.delta >= 0 ? 'good' : 'bad'}">${boon.name}: ${sign}${boon.delta} ${boon.attr} · ${minutes}:${seconds}</div>`;
+  }).join('');
 
   deadBanner.classList.toggle('hidden', self.alive);
   if (!self.alive) respawnIn.textContent = (self.respawnIn / 1000).toFixed(1);
@@ -242,12 +292,25 @@ function updateHud() {
 }
 
 function renderInventory() {
+  const signature = JSON.stringify({
+    items: self.inventory.map((item) => item
+      ? [item.uid, item.durability, item.castsRemaining, item.lifeSeconds]
+      : null),
+    left: self.leftHandUid,
+    right: self.rightHandUid,
+    spell: self.equippedSpellUid,
+  });
+  if (signature === inventorySignature) return;
+  inventorySignature = signature;
   inventoryEl.innerHTML = '';
   const size = 8;
   for (let i = 0; i < size; i++) {
     const item = self.inventory[i];
     const slot = document.createElement('div');
     slot.className = 'slot';
+    slot.dataset.index = String(i);
+    if (i === 4) slot.classList.add('right-bank-start');
+    slot.classList.add(i < 4 ? 'left-bank' : 'right-bank');
     const k = document.createElement('div');
     k.className = 'k';
     k.textContent = String(i + 1);
@@ -255,8 +318,9 @@ function renderInventory() {
 
     if (item) {
       slot.classList.add(item.kind);
-      const equipped = item.uid === self.equippedWeaponUid || item.uid === self.equippedSpellUid;
-      if (equipped) slot.classList.add('equipped');
+      if (item.uid === self.leftHandUid) slot.classList.add('equipped', 'left-equipped');
+      if (item.uid === self.rightHandUid) slot.classList.add('equipped', 'right-equipped');
+      if (item.uid === self.equippedSpellUid) slot.classList.add('equipped', 'spell-equipped');
       const name = document.createElement('div');
       name.className = 'name';
       name.textContent = item.name;
@@ -265,22 +329,57 @@ function renderInventory() {
         const d = document.createElement('div');
         d.textContent = `dmg ${item.damage}`;
         slot.appendChild(d);
+        const s = document.createElement('div');
+        s.textContent = `sta ${item.staminaCost}`;
+        slot.appendChild(s);
       } else if (item.kind === 'spell') {
         const d = document.createElement('div');
         d.textContent = item.heal ? `heal ${item.heal}` : `dmg ${item.damage}`;
         slot.appendChild(d);
         const m = document.createElement('div');
-        m.textContent = `mp ${item.manaCost}`;
+        m.textContent = `mp ${item.manaCost} · sta ${item.staminaCost}`;
         slot.appendChild(m);
+      } else if (item.kind === 'shield') {
+        const d = document.createElement('div');
+        d.textContent = `dodge ${item.dodgeDistance}`;
+        slot.appendChild(d);
+        const s = document.createElement('div');
+        s.textContent = `sta ${item.staminaCost}`;
+        slot.appendChild(s);
+      }
+      const lifecycle = [];
+      if (Number.isFinite(item.durability)) lifecycle.push(`wear ${item.durability}/${item.maxDurability}`);
+      if (Number.isFinite(item.castsRemaining)) lifecycle.push(`casts ${item.castsRemaining}/${item.maxCasts}`);
+      if (Number.isFinite(item.lifeSeconds)) {
+        const minutes = Math.floor(item.lifeSeconds / 60);
+        const seconds = String(item.lifeSeconds % 60).padStart(2, '0');
+        lifecycle.push(`life ${minutes}:${seconds}`);
+      }
+      if (lifecycle.length) {
+        const life = document.createElement('div');
+        life.className = 'lifecycle';
+        life.textContent = lifecycle.join(' · ');
+        slot.appendChild(life);
       }
       slot.addEventListener('click', () => sendAction(ACTION.EQUIP, { uid: item.uid }));
       slot.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         sendAction(ACTION.DROP, { uid: item.uid });
       });
+      slot.draggable = true;
+      slot.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', String(i));
+        e.dataTransfer.effectAllowed = 'move';
+      });
     } else {
       slot.classList.add('empty');
     }
+    slot.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+    slot.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const from = Number(e.dataTransfer.getData('text/plain'));
+      if (Number.isInteger(from)) sendAction(ACTION.MOVE_SLOT, { from, to: i });
+    });
     inventoryEl.appendChild(slot);
   }
 }
@@ -311,7 +410,27 @@ function handleEvent(ev) {
     case 'drop': log(`dropped ${ev.name}`); break;
     case 'full': log(`inventory full — can't pick up ${ev.name}`, 'bad'); break;
     case 'nomana': log(`not enough mana for ${ev.name} (need ${ev.need})`, 'bad'); break;
+    case 'nostamina': log(`not enough stamina for ${ev.name} (need ${ev.need})`, 'bad'); break;
+    case 'broken': log(`${ev.name} broke from wear`, 'bad'); break;
+    case 'expired': log(`${ev.name} expired`, 'bad'); break;
+    case 'cacheregen':
+      if (ev.level === self?.level) log('A chest reformed somewhere in the dungeon.', 'good');
+      break;
+    case 'battleportal':
+      renderX = self.x;
+      renderY = self.y;
+      log(`${ev.by} opened the battle portal — ${ev.fighters} hunter(s) drawn into the arena!`, 'bad');
+      break;
+    case 'linkportal':
+      renderX = self.x;
+      renderY = self.y;
+      log(`travelled through the ${ev.color} link portal`, 'good');
+      break;
     case 'swap': log(`swapping to ${ev.name}…`); break;
+    case 'unequip': log(`unequipped ${ev.name}`); break;
+    case 'dodge': log(`${ev.name}: dodge`); break;
+    case 'throw': log(`threw ${ev.name}`); break;
+    case 'windup': break;
     default: break;
   }
 }
@@ -406,13 +525,33 @@ const FOG_BG = { r: 3, g: 5, b: 7 }; // matches the old flat ceiling/floor fill
 
 let renderX = null, renderY = null;
 let lastFrameT = performance.now();
+const CLIENT_PREDICTION_SECONDS = 0.075;
 
 function updateSmoothing(dt) {
   if (!self) return;
   if (renderX === null) { renderX = self.x; renderY = self.y; return; }
+  let targetX = self.x;
+  let targetY = self.y;
+  const { mx, my } = movementVector();
+  let actionScale = 1;
+  if (self.swapRemaining > 0 || self.dodgeRemaining > 0) actionScale = 0;
+  else if (self.cast) actionScale = 0.4;
+  else if (self.attack) actionScale = 0.7;
+  if (self.alive && self.stamina > 0 && actionScale > 0 && Math.hypot(mx, my) > 0.001) {
+    const lead = self.speed * movementSpeedScale * actionScale * CLIENT_PREDICTION_SECONDS;
+    const predictedX = targetX + mx * lead;
+    const predictedY = targetY + my * lead;
+    if (!clientPositionBlocked(predictedX, targetY)) targetX = predictedX;
+    if (!clientPositionBlocked(targetX, predictedY)) targetY = predictedY;
+  }
+  if (Math.hypot(targetX - renderX, targetY - renderY) > 1.25) {
+    renderX = targetX;
+    renderY = targetY;
+    return;
+  }
   const k = Math.min(1, dt * 14);
-  renderX += (self.x - renderX) * k;
-  renderY += (self.y - renderY) * k;
+  renderX += (targetX - renderX) * k;
+  renderY += (targetY - renderY) * k;
 }
 
 function tileBlocked(tx, ty) {
@@ -580,6 +719,9 @@ function collectBillboards() {
   for (const o of others.values()) list.push({ kind: 'player', ref: o, x: o.x, y: o.y });
   for (const c of caches.values()) list.push({ kind: 'cache', ref: c, x: c.x, y: c.y });
   for (const d of drops.values()) list.push({ kind: 'drop', ref: d, x: d.x, y: d.y });
+  for (const p of projectiles.values()) list.push({ kind: 'projectile', ref: p, x: p.x, y: p.y });
+  if (battlePortal) list.push({ kind: 'battlePortal', ref: battlePortal, x: battlePortal.x, y: battlePortal.y });
+  for (const p of linkPortals.values()) list.push({ kind: 'linkPortal', ref: p, x: p.x, y: p.y });
 
   const visible = [];
   for (const item of list) {
@@ -588,7 +730,10 @@ function collectBillboards() {
     if (dist < 0.05 || dist > MAX_DIST) continue;
     const diff = normalizeAngle(Math.atan2(dy, dx) - viewAngle);
     if (Math.abs(diff) > FOV / 2 + 0.3) continue;
-    if (!clientHasLineOfSight(renderX, renderY, item.x, item.y)) continue;
+    const isPortal = item.kind === 'battlePortal' || item.kind === 'linkPortal';
+    // Portal glow is a supernatural landmark: nearby rings remain visible
+    // through intervening walls, unlike ordinary physical billboards.
+    if (!isPortal && !clientHasLineOfSight(renderX, renderY, item.x, item.y)) continue;
     item.dist = dist * Math.cos(diff);
     item.diff = diff;
     visible.push(item);
@@ -605,8 +750,82 @@ function drawBillboards(horizon, floorScale, w, h) {
 
     if (item.kind === 'player') drawPlayerGlyph(item.ref, sx, feetY, fullH, item.dist);
     else if (item.kind === 'cache') drawCacheGlyph(sx, feetY, fullH);
-    else drawDropGlyph(item.ref, sx, feetY, fullH);
+    else if (item.kind === 'drop') drawDropGlyph(item.ref, sx, feetY, fullH);
+    else if (item.kind === 'projectile') drawProjectileGlyph(item.ref, sx, feetY, fullH);
+    else if (item.kind === 'battlePortal') drawBattlePortalGlyph(item.ref, sx, feetY, fullH);
+    else drawLinkPortalGlyph(item.ref, sx, feetY, fullH);
   }
+}
+
+function clientPositionBlocked(x, y) {
+  const r = PLAYER_RADIUS;
+  return tileBlocked(Math.floor(x - r), Math.floor(y - r)) ||
+    tileBlocked(Math.floor(x + r), Math.floor(y - r)) ||
+    tileBlocked(Math.floor(x - r), Math.floor(y + r)) ||
+    tileBlocked(Math.floor(x + r), Math.floor(y + r));
+}
+
+function drawBattlePortalGlyph(portal, sx, feetY, fullH) {
+  const t = performance.now() / 1000;
+  const portalH = clamp(fullH * 0.78, 26, canvas.height * 1.25);
+  const portalW = portalH * 0.48;
+  const cy = feetY - portalH * 0.48;
+  const activeAlpha = portal.active ? 1 : 0.28;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.shadowColor = '#ff2038';
+  ctx.shadowBlur = clamp(portalW * 0.22, 5, 28);
+  ctx.lineWidth = clamp(portalW * 0.045, 1.5, 5);
+  for (let i = 0; i < 5; i++) {
+    const phase = t * (1.2 + i * 0.17) + i * 1.1;
+    const wobbleX = Math.sin(phase) * portalW * 0.09;
+    const wobbleY = Math.cos(phase * 1.3) * portalH * 0.035;
+    const scale = 0.55 + i * 0.12 + Math.sin(phase * 1.7) * 0.035;
+    ctx.strokeStyle = `rgba(255,${25 + i * 10},${45 + i * 8},${activeAlpha * (0.45 + i * 0.1)})`;
+    ctx.beginPath();
+    ctx.ellipse(sx + wobbleX, cy + wobbleY, portalW * scale, portalH * scale * 0.5, phase * 0.22, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = `rgba(120,0,12,${activeAlpha * 0.22})`;
+  ctx.beginPath();
+  ctx.ellipse(sx, cy, portalW * 0.5, portalH * 0.48, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+const LINK_PORTAL_COLORS = {
+  green: [40, 255, 125],
+  blue: [50, 155, 255],
+  yellow: [255, 220, 45],
+};
+
+function drawLinkPortalGlyph(portal, sx, feetY, fullH) {
+  const rgb = LINK_PORTAL_COLORS[portal.color] || [255, 255, 255];
+  const t = performance.now() / 1000;
+  const portalH = clamp(fullH * 0.78, 26, canvas.height * 1.25);
+  const portalW = portalH * 0.48;
+  const cy = feetY - portalH * 0.48;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.shadowColor = `rgb(${rgb.join(',')})`;
+  ctx.shadowBlur = clamp(portalW * 0.22, 5, 28);
+  ctx.lineWidth = clamp(portalW * 0.045, 1.5, 5);
+  for (let i = 0; i < 5; i++) {
+    const phase = t * (1.2 + i * 0.17) + i * 1.1;
+    const wobbleX = Math.sin(phase) * portalW * 0.09;
+    const wobbleY = Math.cos(phase * 1.3) * portalH * 0.035;
+    const scale = 0.55 + i * 0.12 + Math.sin(phase * 1.7) * 0.035;
+    ctx.strokeStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${0.45 + i * 0.1})`;
+    ctx.beginPath();
+    ctx.ellipse(sx + wobbleX, cy + wobbleY, portalW * scale, portalH * scale * 0.5, phase * 0.22, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = `rgba(${Math.round(rgb[0] * 0.45)},${Math.round(rgb[1] * 0.45)},${Math.round(rgb[2] * 0.45)},0.22)`;
+  ctx.beginPath();
+  ctx.ellipse(sx, cy, portalW * 0.5, portalH * 0.48, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawPlayerGlyph(o, sx, feetY, fullH, dist) {
@@ -695,15 +914,28 @@ function drawPlayerGlyph(o, sx, feetY, fullH, dist) {
     ctx.fill();
   }
 
-  // A short blade breaks the cloak silhouette and reads as hunter.
-  ctx.strokeStyle = '#b8d8c6';
+  // A raised amber weapon telegraphs an incoming attack; after release it
+  // follows through across the cloak. Idle hunters keep the subtle blade.
+  const attackMotion = o.attack
+    ? (o.attack.phase === 'windup' ? -0.35 - o.attack.progress * 0.55 : -0.9 + o.attack.progress * 1.45)
+    : 0;
+  const weaponSide = o.attack?.hand === 'left' ? -1 : 1;
+  ctx.strokeStyle = o.attack?.phase === 'windup' ? '#ffcf4d' : '#b8d8c6';
   ctx.lineWidth = clamp(lineW * 0.65, 1, 2.5);
+  const gripX = sx + weaponSide * bodyW * 0.24;
+  const gripY = topY + bodyH * 0.55;
+  const bladeAngle = weaponSide > 0 ? 0.55 + attackMotion : Math.PI - 0.55 - attackMotion;
+  const bladeLen = bodyW * 0.42;
+  const tipX = gripX + Math.cos(bladeAngle) * bladeLen;
+  const tipY = gripY + Math.sin(bladeAngle) * bladeLen;
   ctx.beginPath();
-  ctx.moveTo(sx + bodyW * 0.24, topY + bodyH * 0.52);
-  ctx.lineTo(sx + bodyW * 0.58, topY + bodyH * 0.72);
-  ctx.moveTo(sx + bodyW * 0.38, topY + bodyH * 0.59);
-  ctx.lineTo(sx + bodyW * 0.48, topY + bodyH * 0.54);
+  ctx.moveTo(gripX, gripY);
+  ctx.lineTo(tipX, tipY);
+  ctx.moveTo(gripX - weaponSide * bodyW * 0.08, gripY - bodyH * 0.015);
+  ctx.lineTo(gripX + weaponSide * bodyW * 0.08, gripY + bodyH * 0.015);
   ctx.stroke();
+
+  if (o.cast) drawConvergingSparkles(sx, topY + bodyH * 0.3, bodyW * 1.25, o.cast.progress, o.cast.style, fog);
 
   ctx.restore();
 }
@@ -822,6 +1054,160 @@ function drawDropGlyph(d, sx, feetY, fullH) {
   ctx.strokeRect(sx - size / 2, feetY - size, size, size);
 }
 
+function spellColor(style) {
+  if (style === 'knife') return '#e4ece8';
+  if (style === 'frost') return '#9de8ff';
+  if (style === 'ember') return '#ff7a3d';
+  if (style === 'mend') return '#76ff9f';
+  return '#d6b4ff';
+}
+
+function drawConvergingSparkles(cx, cy, radius, progress, style, alpha = 1) {
+  const color = spellColor(style);
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.fillStyle = color;
+  for (let i = 0; i < 12; i++) {
+    const angle = i * Math.PI * 2 / 12 + performance.now() / 900;
+    const wobble = 0.82 + 0.18 * Math.sin(performance.now() / 130 + i * 2.3);
+    const r = radius * (1 - progress * 0.88) * wobble;
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r * 0.65;
+    const size = clamp(radius * 0.035 * (0.7 + progress), 1, 4);
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawProjectileGlyph(projectile, sx, feetY, fullH) {
+  const r = clamp(fullH * 0.11 * projectile.energy, 3, 30);
+  const cy = feetY - fullH * 0.42;
+  const color = spellColor(projectile.style);
+  if (projectile.style === 'knife') {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = clamp(r * 0.45, 1.5, 4);
+    ctx.beginPath();
+    ctx.moveTo(sx - r * 1.8, cy + r * 0.8);
+    ctx.lineTo(sx + r * 1.8, cy - r * 0.8);
+    ctx.stroke();
+    return;
+  }
+  const glow = ctx.createRadialGradient(sx, cy, 0, sx, cy, r * 3.2);
+  glow.addColorStop(0, color);
+  glow.addColorStop(0.35, color);
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(sx - r * 3.2, cy - r * 3.2, r * 6.4, r * 6.4);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(sx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// First-person hand equipment. The authoritative attack phase comes from the
+// server snapshot; this layer only turns it into readable stab/swing motion.
+function drawFirstPersonLoadout() {
+  if (!self?.alive) return;
+  const left = self.inventory.find((item) => item?.uid === self.leftHandUid);
+  const right = self.inventory.find((item) => item?.uid === self.rightHandUid);
+  if (left) drawFirstPersonItem(left, 'left', self.attack?.hand === 'left' ? self.attack : null);
+  if (right) drawFirstPersonItem(right, 'right', self.attack?.hand === 'right' ? self.attack : null);
+}
+
+function drawFirstPersonSpellConvergence() {
+  if (!self?.cast) return;
+  const radius = Math.min(canvas.width, canvas.height) * 0.24;
+  drawConvergingSparkles(canvas.width / 2, canvas.height / 2, radius, self.cast.progress, self.cast.style, 0.9);
+}
+
+function drawFirstPersonItem(item, hand, attack) {
+  const w = canvas.width, h = canvas.height;
+  const side = hand === 'left' ? -1 : 1;
+  const baseX = hand === 'left' ? w * 0.22 : w * 0.78;
+  const baseY = h * 0.96;
+
+  if (item.kind === 'shield') {
+    const lift = self.dodgeRemaining > 0 ? h * 0.09 : 0;
+    const sw = clamp(w * 0.1, 55, 150);
+    const sh = sw * 0.82;
+    ctx.fillStyle = 'rgba(18,28,32,0.88)';
+    ctx.strokeStyle = self.dodgeRemaining > 0 ? '#9dffd0' : '#b8c7cf';
+    ctx.lineWidth = clamp(sw * 0.025, 2, 4);
+    ctx.beginPath();
+    ctx.moveTo(baseX - sw / 2, baseY - lift - sh * 0.8);
+    ctx.lineTo(baseX + sw / 2, baseY - lift - sh * 0.8);
+    ctx.lineTo(baseX + sw * 0.42, baseY - lift - sh * 0.2);
+    ctx.lineTo(baseX, baseY - lift);
+    ctx.lineTo(baseX - sw * 0.42, baseY - lift - sh * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(baseX, baseY - lift - sh * 0.72);
+    ctx.lineTo(baseX, baseY - lift - sh * 0.12);
+    ctx.stroke();
+    return;
+  }
+  if (item.kind !== 'weapon') return;
+
+  let gripX = baseX;
+  let gripY = baseY;
+  let angle = hand === 'left' ? -1.02 : -2.12;
+  const style = item.attackStyle || 'swing';
+  if (attack) {
+    const p = attack.progress;
+    if (style === 'stab' || style === 'thrust') {
+      const reach = attack.phase === 'windup' ? -p * 0.12 : Math.sin(p * Math.PI) * (style === 'thrust' ? 0.34 : 0.25);
+      gripX += side * w * (attack.phase === 'windup' ? 0.04 * p : -0.12 * Math.sin(p * Math.PI));
+      gripY -= h * reach;
+      angle = hand === 'left' ? -1.18 : -1.96;
+    } else if (style === 'throw') {
+      const throwReach = attack.phase === 'windup' ? -p * 0.45 : -0.45 + p * 1.15;
+      angle += side * throwReach;
+      gripY -= h * 0.08 * Math.sin(p * Math.PI);
+    } else {
+      const sweep = attack.phase === 'windup' ? p * -0.75 : -0.75 + p * (style === 'cleave' ? 2.2 : 1.7);
+      angle += side * sweep;
+      gripY -= h * 0.04 * Math.sin(p * Math.PI);
+      if (style === 'cleave' && attack.phase === 'release') {
+        ctx.strokeStyle = `rgba(255,159,90,${(0.42 * (1 - p)).toFixed(2)})`;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(w / 2, h * 0.72, w * 0.23, Math.PI * 1.08, Math.PI * 1.92);
+        ctx.stroke();
+      }
+    }
+  }
+
+  const weaponLen = clamp(h * (style === 'thrust' ? 0.42 : 0.31), 100, 360);
+  const handleLen = weaponLen * 0.25;
+  const tipX = gripX + Math.cos(angle) * weaponLen;
+  const tipY = gripY + Math.sin(angle) * weaponLen;
+  const handleX = gripX - Math.cos(angle) * handleLen;
+  const handleY = gripY - Math.sin(angle) * handleLen;
+
+  ctx.strokeStyle = attack?.phase === 'windup' ? '#ffcf4d' : '#d6e2dc';
+  ctx.lineWidth = clamp(h * 0.008, 3, 8);
+  ctx.beginPath();
+  ctx.moveTo(handleX, handleY);
+  ctx.lineTo(gripX, gripY);
+  ctx.stroke();
+  ctx.strokeStyle = '#eef7f2';
+  ctx.lineWidth = clamp(h * 0.005, 2, 6);
+  ctx.beginPath();
+  ctx.moveTo(gripX, gripY);
+  ctx.lineTo(tipX, tipY);
+  ctx.stroke();
+  ctx.strokeStyle = '#ff9f5a';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(gripX - Math.sin(angle) * 18, gripY + Math.cos(angle) * 18);
+  ctx.lineTo(gripX + Math.sin(angle) * 18, gripY - Math.cos(angle) * 18);
+  ctx.stroke();
+}
+
 // ---------------------------------------------------------------------
 // minimap — small corner HUD, only the tiles this player has explored
 // ---------------------------------------------------------------------
@@ -864,6 +1250,20 @@ function drawMinimap() {
     mctx.fill();
   }
 
+  if (battlePortal) drawPortalMinimapMarker(
+    battlePortal,
+    battlePortal.active ? '#ff2038' : 'rgba(255,32,56,0.35)',
+    cx,
+    cy,
+    tilePx,
+    size,
+  );
+
+  for (const portal of linkPortals.values()) {
+    const rgb = LINK_PORTAL_COLORS[portal.color] || [255, 255, 255];
+    drawPortalMinimapMarker(portal, `rgb(${rgb.join(',')})`, cx, cy, tilePx, size);
+  }
+
   mctx.fillStyle = '#ffffff';
   mctx.strokeStyle = '#ffffff';
   mctx.lineWidth = 1.5;
@@ -876,12 +1276,44 @@ function drawMinimap() {
   mctx.stroke();
 }
 
+function drawPortalMinimapMarker(portal, color, cx, cy, tilePx, size) {
+  const margin = 8;
+  const rawX = size / 2 + (portal.x - cx) * tilePx;
+  const rawY = size / 2 + (portal.y - cy) * tilePx;
+  const offscreen = rawX < margin || rawX > size - margin || rawY < margin || rawY > size - margin;
+  let sx = rawX;
+  let sy = rawY;
+  if (offscreen) {
+    const dx = rawX - size / 2;
+    const dy = rawY - size / 2;
+    const scale = Math.min(
+      (size / 2 - margin) / Math.max(Math.abs(dx), 0.001),
+      (size / 2 - margin) / Math.max(Math.abs(dy), 0.001),
+    );
+    sx = size / 2 + dx * scale;
+    sy = size / 2 + dy * scale;
+  }
+  mctx.save();
+  mctx.strokeStyle = color;
+  mctx.fillStyle = color;
+  mctx.lineWidth = offscreen ? 2.5 : 1.75;
+  if (offscreen) mctx.setLineDash([2, 2]);
+  mctx.beginPath();
+  mctx.arc(sx, sy, (offscreen ? 5 : 4) + Math.sin(performance.now() / 220), 0, Math.PI * 2);
+  mctx.stroke();
+  mctx.setLineDash([]);
+  mctx.globalAlpha = 0.65;
+  mctx.beginPath();
+  mctx.arc(sx, sy, 2, 0, Math.PI * 2);
+  mctx.fill();
+  mctx.restore();
+}
+
 function loop(now) {
   const dt = Math.min(0.1, (now - lastFrameT) / 1000);
   lastFrameT = now;
 
   applyKeyTurn(dt);
-  pumpInput(now);
   updateSmoothing(dt);
 
   ctx.fillStyle = '#04070a';
@@ -889,12 +1321,11 @@ function loop(now) {
 
   if (self) {
     drawScene();
+    drawFirstPersonSpellConvergence();
+    drawFirstPersonLoadout();
     drawMinimap();
     audio.updateListener(renderX, renderY, viewAngle);
-    const selfMoving = self.alive && (
-      keys.has('w') || keys.has('s') || keys.has('a') || keys.has('d') ||
-      keys.has('arrowup') || keys.has('arrowdown')
-    );
+    const selfMoving = self.alive && self.moving;
     audio.setMoving('self', selfMoving, renderX, renderY, true);
   }
 

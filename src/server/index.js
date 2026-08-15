@@ -10,11 +10,13 @@ import { WebSocketServer } from 'ws';
 
 import { MSG, TICK_MS } from '../shared/constants.js';
 import { Game } from './game.js';
+import { consumeRateLimit } from './rate-limit.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', '..', 'public');
 const SHARED_DIR = path.join(__dirname, '..', 'shared');
 const PORT = Number(process.env.PORT) || 8080;
+const MAX_MESSAGE_BYTES = 8192;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -72,8 +74,12 @@ let nextId = 1;
 wss.on('connection', (ws) => {
   const id = `p${nextId++}`;
   let player = null;
+  const rateLimits = Object.create(null);
 
   ws.on('message', (raw) => {
+    const receivedAt = Date.now();
+    if (raw.length > MAX_MESSAGE_BYTES) return;
+    if (!consumeRateLimit(rateLimits, 'all', 60, 30, receivedAt)) return;
     let msg;
     try {
       msg = JSON.parse(raw);
@@ -85,6 +91,7 @@ wss.on('connection', (ws) => {
       if (player || ws.isSpectator) return;
       ws.isSpectator = true;
       ws.dmLevel = 0;
+      ws.entityRevision = -1;
       send(ws, { type: MSG.WELCOME, dm: true, ...game.dmWelcome(ws.dmLevel) });
       console.log('[spectate] DungeonMaster view connected');
       return;
@@ -94,14 +101,30 @@ wss.on('connection', (ws) => {
       if (player || ws.isSpectator) return;
       player = game.addPlayer(id, msg.name);
       ws.player = player;
+      ws.entityRevision = -1;
       send(ws, { type: MSG.WELCOME, ...game.welcomeFor(player) });
       console.log(`[join] ${player.name} (${id}) — ${game.players.size} online`);
+      return;
+    }
+
+    if (msg.type === MSG.DM_SETTINGS) {
+      if (!ws.isSpectator || !consumeRateLimit(rateLimits, 'settings', 8, 4, receivedAt)) return;
+      const result = msg.reset ? game.resetRuntimeSettings() : game.updateRuntimeSettings(msg.settings);
+      if (!result.ok) {
+        send(ws, { type: MSG.SETTINGS, settings: game.runtimeSettings(), error: result.error });
+        return;
+      }
+      for (const client of wss.clients) {
+        send(client, { type: MSG.SETTINGS, settings: result.settings });
+      }
+      console.log('[settings] DungeonMaster updated live balance settings');
       return;
     }
 
     if (!player) return;
 
     if (msg.type === MSG.INPUT) {
+      if (!consumeRateLimit(rateLimits, 'input', 30, 10, receivedAt)) return;
       player.move.x = clampUnit(msg.mx);
       player.move.y = clampUnit(msg.my);
       if (Number.isFinite(msg.aim)) player.aim = msg.aim;
@@ -109,7 +132,8 @@ wss.on('connection', (ws) => {
     }
 
     if (msg.type === MSG.ACTION) {
-      game.handleAction(player, msg, Date.now());
+      if (!consumeRateLimit(rateLimits, 'action', 10, 5, receivedAt)) return;
+      game.handleAction(player, msg, receivedAt);
     }
   });
 
@@ -143,12 +167,19 @@ setInterval(() => {
 
   for (const ws of wss.clients) {
     if (ws.isSpectator) {
-      send(ws, { type: MSG.STATE, dm: true, ...game.dmSnapshot(ws.dmLevel) });
+      const revision = game.entityRevision(ws.dmLevel);
+      const includeEntities = ws.entityRevision !== revision;
+      send(ws, { type: MSG.STATE, dm: true, ...game.dmSnapshot(ws.dmLevel, includeEntities) });
+      ws.entityRevision = revision;
       continue;
     }
     if (!ws.player || !game.players.has(ws.player.id)) continue;
-    send(ws, { type: MSG.STATE, ...game.snapshotFor(ws.player) });
+    const revision = game.entityRevision(ws.player.level);
+    const includeEntities = ws.entityRevision !== revision || ws.player.newlyExplored.length > 0;
+    send(ws, { type: MSG.STATE, ...game.snapshotFor(ws.player, includeEntities) });
+    ws.entityRevision = revision;
   }
+  game.clearEvents();
 }, TICK_MS);
 
 function lanAddresses() {

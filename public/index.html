@@ -16,10 +16,10 @@
       <input id="nameInput" maxlength="16" placeholder="your name" autocomplete="off" />
       <button id="joinBtn">Enter the Dungeon</button>
       <p class="hint">
-        Forward/back: W/S or ↑/↓ &nbsp;•&nbsp; Strafe: A/D &nbsp;•&nbsp;
+        Move: tap W/A/S/D or arrows to conserve stamina, hold to run continuously &nbsp;•&nbsp;
         Turn: mouse (click the view first), or hold ←/→ &nbsp;•&nbsp;
-        Attack: Left click &nbsp;•&nbsp; Cast: Right click / Space &nbsp;•&nbsp;
-        Open/pick up: E or O &nbsp;•&nbsp; Inventory: click a slot to equip, right-click to drop
+        Left hand: Z / click &nbsp;•&nbsp; Right hand: M / right-click &nbsp;•&nbsp; Cast: Space &nbsp;•&nbsp;
+        Open/pick up: E or O &nbsp;•&nbsp; Inventory: click to equip/toggle, drag to move sides, right-click to drop
       </p>
       <p class="hint"><a id="dmLink" href="/dm.html">Open the DungeonMaster view instead →</a></p>
     </div>
@@ -32,6 +32,7 @@
     <div class="bars">
       <div class="bar hp"><div class="fill" id="hpFill"></div><span id="hpText">HP</span></div>
       <div class="bar mp"><div class="fill" id="mpFill"></div><span id="mpText">MP</span></div>
+      <div class="bar stamina"><div class="fill" id="staminaFill"></div><span id="staminaText">STA</span></div>
       <div class="stat">SPD <b id="spdText">-</b></div>
       <div class="stat">LVL <b id="lvlText">-</b></div>
       <div class="stat">K/D <b id="kdText">0/0</b></div>
@@ -42,6 +43,7 @@
 
     <div id="inventory"></div>
 
+    <div id="boons"></div>
     <div id="log"></div>
   </div>
 

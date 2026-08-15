@@ -1,15 +1,18 @@
 import { TILE, MSG } from '/shared/constants.js';
 
 // ---------------------------------------------------------------------
-// The DungeonMaster view is a pure observer: no character, no fog, whole
-// level visible always, every living player shown at once. It fits the
-// entire level into the viewport rather than following anyone.
+// The DungeonMaster has no character or fog and sees every player. In the
+// trusted test build it can also update validated runtime balance settings.
 // ---------------------------------------------------------------------
 
 const canvas = document.getElementById('view');
 const ctx = canvas.getContext('2d');
 const infoEl = document.getElementById('dmInfo');
 const rosterEl = document.getElementById('dmRoster');
+const controlsToggle = document.getElementById('dmControlsToggle');
+const settingsForm = document.getElementById('dmSettingsForm');
+const settingsReset = document.getElementById('dmSettingsReset');
+const settingsStatus = document.getElementById('dmSettingsStatus');
 
 let width = 0, height = 0;
 let tiles = new Uint8Array(0);
@@ -18,6 +21,11 @@ let players = [];
 let caches = [];
 let drops = [];
 let soundPoints = [];
+let projectiles = [];
+let battlePortal = null;
+let linkPortals = [];
+let staticMapCanvas = null;
+let staticMapKey = '';
 
 // Must match FOOTSTEP_MAX_DIST in public/audio.js — how far another
 // player's footsteps are audible, used to draw the "who's making noise"
@@ -29,6 +37,7 @@ const movingIds = new Set();
 function resize() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
+  staticMapKey = '';
 }
 window.addEventListener('resize', resize);
 resize();
@@ -41,6 +50,24 @@ ws.addEventListener('message', (evt) => {
   const msg = JSON.parse(evt.data);
   if (msg.type === MSG.WELCOME) return onWelcome(msg);
   if (msg.type === MSG.STATE) return onState(msg);
+  if (msg.type === MSG.SETTINGS) return onSettings(msg);
+});
+
+controlsToggle.addEventListener('click', () => settingsForm.classList.toggle('hidden'));
+settingsForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!settingsForm.reportValidity() || ws.readyState !== WebSocket.OPEN) return;
+  const settings = {};
+  for (const input of settingsForm.querySelectorAll('[data-setting]')) {
+    settings[input.dataset.setting] = Number(input.value) * Number(input.dataset.scale || 1);
+  }
+  settingsStatus.textContent = 'Applyingâ€¦';
+  ws.send(JSON.stringify({ type: MSG.DM_SETTINGS, settings }));
+});
+settingsReset.addEventListener('click', () => {
+  if (ws.readyState !== WebSocket.OPEN) return;
+  settingsStatus.textContent = 'Resettingâ€¦';
+  ws.send(JSON.stringify({ type: MSG.DM_SETTINGS, reset: true }));
 });
 
 function onWelcome(msg) {
@@ -51,14 +78,32 @@ function onWelcome(msg) {
   height = msg.height;
   tiles = Uint8Array.from(msg.tiles);
   soundPoints = msg.soundPoints || [];
+  renderSettings(msg.settings);
   requestAnimationFrame(loop);
+}
+
+function onSettings(msg) {
+  renderSettings(msg.settings);
+  settingsStatus.textContent = msg.error || 'Live settings applied.';
+  settingsStatus.classList.toggle('error', Boolean(msg.error));
+}
+
+function renderSettings(settings) {
+  if (!settings) return;
+  for (const input of settingsForm.querySelectorAll('[data-setting]')) {
+    const value = settings[input.dataset.setting];
+    if (Number.isFinite(value)) input.value = String(value / Number(input.dataset.scale || 1));
+  }
 }
 
 function onState(msg) {
   level = msg.level;
   players = msg.players;
-  caches = msg.caches;
-  drops = msg.drops;
+  if (msg.caches) caches = msg.caches;
+  if (msg.drops) drops = msg.drops;
+  projectiles = msg.projectiles || [];
+  battlePortal = msg.battlePortal || null;
+  linkPortals = msg.linkPortals || [];
   updateMoving();
   updateHeader();
 }
@@ -114,7 +159,7 @@ function computeFit() {
   return { tile, offX, offY };
 }
 
-function drawMap(fit) {
+function drawMap(fit, targetCtx = ctx) {
   const { tile, offX, offY } = fit;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -122,20 +167,20 @@ function drawMap(fit) {
       const sx = offX + x * tile;
       const sy = offY + y * tile;
       if (v === TILE.WALL) {
-        ctx.strokeStyle = '#14612f';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(sx + 0.5, sy + 0.5, tile - 1, tile - 1);
+        targetCtx.strokeStyle = '#14612f';
+        targetCtx.lineWidth = 1;
+        targetCtx.strokeRect(sx + 0.5, sy + 0.5, tile - 1, tile - 1);
       } else {
-        ctx.strokeStyle = 'rgba(20, 97, 47, 0.3)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(sx + 0.5, sy + 0.5, tile - 1, tile - 1);
+        targetCtx.strokeStyle = 'rgba(20, 97, 47, 0.3)';
+        targetCtx.lineWidth = 1;
+        targetCtx.strokeRect(sx + 0.5, sy + 0.5, tile - 1, tile - 1);
         if (v === TILE.STAIRS_DOWN || v === TILE.STAIRS_UP) {
-          ctx.strokeStyle = '#ffcf4d';
+          targetCtx.strokeStyle = '#ffcf4d';
           const mx = sx + tile / 2, my = sy + tile / 2, r = tile * 0.32;
-          ctx.beginPath();
-          ctx.moveTo(mx, my - r); ctx.lineTo(mx + r, my); ctx.lineTo(mx, my + r); ctx.lineTo(mx - r, my);
-          ctx.closePath();
-          ctx.stroke();
+          targetCtx.beginPath();
+          targetCtx.moveTo(mx, my - r); targetCtx.lineTo(mx + r, my); targetCtx.lineTo(mx, my + r); targetCtx.lineTo(mx - r, my);
+          targetCtx.closePath();
+          targetCtx.stroke();
         }
       }
     }
@@ -162,6 +207,82 @@ function drawDrops(fit) {
     ctx.lineWidth = 1.5;
     const s = tile * 0.28;
     ctx.strokeRect(sx - s / 2, sy - s / 2, s, s);
+  }
+}
+
+function drawProjectiles(fit) {
+  const { tile, offX, offY } = fit;
+  for (const p of projectiles) {
+    const sx = offX + p.x * tile, sy = offY + p.y * tile;
+    ctx.fillStyle = p.style === 'ember' ? '#ff7a3d' : p.style === 'frost' ? '#9de8ff' : p.style === 'knife' ? '#e4ece8' : '#d6b4ff';
+    ctx.beginPath();
+    ctx.arc(sx, sy, Math.max(2, tile * 0.18 * p.energy), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function staticMapLayer(fit) {
+  const key = `${canvas.width}:${canvas.height}:${width}:${height}:${fit.tile}:${fit.offX}:${fit.offY}`;
+  if (staticMapCanvas && staticMapKey === key) return staticMapCanvas;
+  staticMapCanvas = document.createElement('canvas');
+  staticMapCanvas.width = canvas.width;
+  staticMapCanvas.height = canvas.height;
+  const staticCtx = staticMapCanvas.getContext('2d');
+  drawMap(fit, staticCtx);
+  staticMapKey = key;
+  return staticMapCanvas;
+}
+
+function drawBattlePortal(fit) {
+  if (!battlePortal) return;
+  const { tile, offX, offY } = fit;
+  const sx = offX + battlePortal.x * tile;
+  const sy = offY + battlePortal.y * tile;
+  const t = performance.now() / 1000;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.shadowColor = '#ff2038';
+  ctx.shadowBlur = Math.max(5, tile * 1.5);
+  for (let i = 0; i < 4; i++) {
+    const phase = t * (1.3 + i * 0.2) + i;
+    const r = Math.max(4, tile * (0.5 + i * 0.18));
+    ctx.strokeStyle = battlePortal.active ? `rgba(255,32,56,${0.45 + i * 0.12})` : 'rgba(255,32,56,0.2)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(sx + Math.sin(phase) * tile * 0.16, sy + Math.cos(phase) * tile * 0.16, r, r * 0.58, phase * 0.4, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawLinkPortals(fit) {
+  const { tile, offX, offY } = fit;
+  const colors = { green: '#28ff7d', blue: '#329bff', yellow: '#ffdc2d' };
+  const fills = { green: 'rgba(10,105,45,0.26)', blue: 'rgba(12,55,125,0.26)', yellow: 'rgba(120,92,5,0.26)' };
+  const t = performance.now() / 1000;
+  for (const portal of linkPortals) {
+    const sx = offX + portal.x * tile;
+    const sy = offY + portal.y * tile;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.shadowColor = colors[portal.color] || '#fff';
+    ctx.shadowBlur = Math.max(7, tile * 1.8);
+    for (let i = 0; i < 4; i++) {
+      const phase = t * (1.3 + i * 0.2) + i;
+      const r = Math.max(5, tile * (0.55 + i * 0.2));
+      ctx.strokeStyle = colors[portal.color] || '#fff';
+      ctx.globalAlpha = 0.55 + i * 0.13;
+      ctx.lineWidth = 1.75;
+      ctx.beginPath();
+      ctx.ellipse(sx + Math.sin(phase) * tile * 0.16, sy + Math.cos(phase) * tile * 0.16, r, r * 0.58, phase * 0.4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = fills[portal.color] || 'rgba(255,255,255,0.22)';
+    ctx.beginPath();
+    ctx.arc(sx, sy, Math.max(3, tile * 0.42), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 }
 
@@ -235,10 +356,13 @@ function loop() {
 
   if (width && height) {
     const fit = computeFit();
-    drawMap(fit);
+    ctx.drawImage(staticMapLayer(fit), 0, 0);
     drawSoundPoints(fit);
     drawCaches(fit);
     drawDrops(fit);
+    drawBattlePortal(fit);
+    drawLinkPortals(fit);
+    drawProjectiles(fit);
     drawPlayers(fit);
   }
 

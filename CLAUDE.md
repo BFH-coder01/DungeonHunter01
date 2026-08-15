@@ -44,13 +44,22 @@ npm start
   player's allowed exploration state. For the v01 proof of concept,
   `CONFIG.revealAll` is intentionally `true`; this is test scaffolding, not the
   final visibility policy.
+- Inventory is a fixed eight-slot loadout: slots 1–4 map to the left hand and
+  5–8 to the right. Z/M (and matching mouse buttons) activate
+  those hands. Number keys toggle equipment; drag-and-drop swaps slot sides.
+- A shield hand dodges. With two weapons, the right hand is primary/full
+  damage and the left is off-hand/half damage; a lone left weapon is full.
 
 ### DungeonMaster UI
 
-- Read-only full-level overview with no fog.
+- Full-level overview with no fog and a collapsible live Game Settings panel.
 - Shows every player, player name/health, cache, drop, movement/noise range,
   and all ambient sound points.
-- `MSG.SPECTATE` is currently trusted-LAN access with no authentication.
+- Spectators may send range-validated `MSG.DM_SETTINGS` updates for stamina,
+  movement, boon, chest, and battle-portal timing. The server broadcasts the
+  resulting `MSG.SETTINGS` state so player prediction stays synchronized.
+- `MSG.SPECTATE` and DM settings are currently trusted-LAN access with no
+  authentication; this is intentional for the test environment.
 
 ### Audio
 
@@ -59,9 +68,10 @@ npm start
 - Ambient sources are authoritative seeded dungeon entities generated in
   `src/server/dungeon.js`, never random client-local points.
 - Sound catalogue and tuning are centralized in `src/shared/sounds.js`:
-  `AMBIENT_POINT_COUNT`, `AMBIENT_MAX_DIST`, `AMBIENT_REF_DIST`, and
+  `ambientPointCount`, `AMBIENT_POINT_MIN`, `AMBIENT_BASE_AREA`,
+  `AMBIENT_MAX_DIST`, `AMBIENT_REF_DIST`, and
   `AMBIENT_GAIN`.
-- Current ambient tuning: 12 points, 10-tile maximum distance, 1.5-tile
+- Current ambient tuning: 45 points on 192×132, 22-tile maximum distance, 1.5-tile
   reference distance, and 0.30 ambient-only gain. Do not change footstep
   volume when tuning ambience.
 - Players receive authoritative points as they approach audible range. The DM
@@ -84,6 +94,11 @@ npm start
 - `public/audio.js` — footstep loops, ambient scheduling, listener and panners.
 - `public/dm.js` — complete schematic dungeon/player/cache/sound overview.
 
+Dungeon corridor density is controlled by `extraCorridorsPerRoom` and
+`corridorNeighborChoices`. Extra links must remain unique and seeded; retain
+the nearest-room spanning tree so all rooms stay connected without long
+cross-map cuts, even when local loop density is retuned.
+
 ## Fight-dynamics starting point
 
 Combat is server-authoritative in `src/server/game.js`:
@@ -97,14 +112,38 @@ Combat is server-authoritative in `src/server/game.js`:
 - Weapon swaps deliberately root the player for `weaponSwapMs`; spell changes
   are immediate.
 
-Resolve these known correctness issues while working on fight dynamics:
+The first fight-mechanics slice resolved two earlier correctness defects:
+events are cleared only after snapshot fan-out, and full-inventory pickups no
+longer consume caches or floor drops.
 
-1. `Game.tick()` clears `this.events` before the server sends snapshots.
-   Action/combat/pickup/death events emitted between ticks can be discarded,
-   so move event clearing until after snapshot fan-out or use per-client queues.
-2. `doPickup()` marks a cache looted or removes a floor drop before
-   `giveItem()` checks inventory capacity. A full inventory therefore destroys
-   non-boon items. Validate capacity before mutating the world entity.
+Current weapon/hand foundation:
+
+- Fixed nullable inventory slots preserve left/right loadout position.
+- Equipment number keys toggle the item assigned to that slot's hand.
+- Server-authoritative slot swapping supports drag-to-rearrange loadouts.
+- Weapon attacks create an authoritative windup/release state; damage resolves
+  after the windup, not on keydown. Axe cleave can hit multiple targets and
+  maul applies knockback.
+- Shields are cache items (at least one is guaranteed per level). Activating a
+  shield hand performs a directional dash with brief invulnerability.
+- First-person weapons animate by attack style, and opponent weapons turn
+  amber during their telegraphed windup.
+- Weapon attacks, shield dodges, spell casts, and successful movement cycles
+  spend authoritative stamina. Movement always uses `movementSpeedScale` and
+  drains `movementStaminaPerSec`; zero stamina prevents movement. Regeneration
+  starts only after movement intent is released for `staminaRegenDelayMs`.
+  Never base drain on OS keyboard-repeat events—the client sends state and the
+  server owns cycle timing.
+- Only one attack, cast, dodge, or swap may be active; follow-up key presses are
+  rejected rather than queued. Weapons apply individual movement scales during
+  wind-up and recovery, and WebSocket token buckets protect against flooding.
+- Every level has a seeded-random red battle portal and a large battle destination
+  room. One player crossing it gathers all living players into spread arena
+  positions, cancels active actions, and starts a 20-second retrigger cooldown;
+  normal room exits remain available for retreat.
+- Green, blue, and yellow portals each form a distant bidirectional pair. A
+  per-player arrival lock prevents immediate bounce-back and clears only after
+  the player steps out of the destination portal.
 
 Preserve these gameplay decisions unless the user changes them:
 
@@ -114,6 +153,32 @@ Preserve these gameplay decisions unless the user changes them:
 - Alive opponents have no player-view name/health overlay; killed opponents
   briefly reveal their name.
 - The DM continues to see complete combat state.
+
+Spell/projectile foundation:
+
+- Space starts an authoritative cast windup rendered as sparkles converging on
+  the caster. Mend resolves after windup; offensive spells launch projectiles.
+- Projectiles move in server tick substeps, lose damage energy with distance,
+  and collide with walls, unopened caches, and players. Frost slows only on a
+  non-dodged hit; Ember applies radial damage at a player impact.
+- Throwing Knives are hand equipment with a throw windup. They use the same
+  projectile engine and land as the original inventory item after impact or
+  range expiry, allowing any player to pick them up and reuse them.
+- Melee weapons lose durability only when a resolved swing contacts a player
+  or wall. Throwing knives wear only on player/wall projectile impact; misses,
+  range expiry, and cache collisions do not count. Shields wear on each dodge.
+  Spells have a finite cast count, consumed whenever the cast resolves, whether
+  or not an offensive projectile later hits. Equipment and spells do not
+  expire while idle; only qualifying wear and completed casts consume them.
+- Boons are temporary server-owned effects. Their two-minute timer is visible
+  in the HUD, and the affected attribute is recalculated when each effect ends.
+- Every cache reward records its source cache. When that exact reward breaks,
+  exhausts, a boon expires, or a reward leaves with a disconnected player, the cache waits a
+  randomized delay, relocates to another valid separated floor tile, and rolls
+  a fresh item. Keep completion idempotent via the outstanding reward UID.
+- Boon/cache lifecycle tuning belongs in `CONFIG.rewards`; per-item durability and cast
+  counts belong in `src/shared/items.js`. Do not reset lifecycle fields during
+  pickup or drop operations.
 
 ## Deferred scope
 

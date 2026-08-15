@@ -1,22 +1,23 @@
 # DungeonHunter01
 
 Browser-based, procedurally generated dungeon crawler for play over the home
-wifi. One machine runs the server; everyone else joins from a browser on the
-same network. No installs, no accounts — just a URL.
+wifi. One host machine runs the Node.js server; everyone else joins from a
+browser on the same network. Players need no installation or account — just
+the host's LAN URL.
 
 There are two ways to view the dungeon:
 
 - **Participant view** (`/`) — first-person. You're in the dungeon: a
   raycasted wireframe view of corridors and rooms, WASD movement, mouse-look,
   inventory, HUD, the works.
-- **DungeonMaster view** (`/dm.html`) — spectator. A top-down overview of the
-  whole level and every adventurer on it, live. No character, no fog — this
-  is the "big screen" for whoever's hosting.
+- **DungeonMaster view** (`/dm.html`) — a top-down overview of the whole level
+  and every adventurer, plus live test-session balance controls. No character
+  and no fog — this is the "big screen" for whoever's hosting.
 
 ## v01 scope
 
-- Procedural dungeon: random 1–10 levels (rooms + corridors), random weapon
-  caches, random player spawn points.
+- Procedural dungeon: random 1–10 levels with dense looping corridor networks,
+  random weapon caches, and random player spawn points.
 - Players join from a browser, get assigned a random spawn point; on death
   they respawn at a different random spawn point.
 - Per-player HUD with fog-of-war — only the parts of the dungeon a player has
@@ -25,8 +26,13 @@ There are two ways to view the dungeon:
 - Random per-player attributes (health, mana, move speed); caches can raise
   *or* lower an attribute when looted (it's a gamble).
 - Inventory with pickup/drop. Weapons are held and must be **equipped**
-  (stop-and-swap, ~0.9s) — no hotkey instant-switching. Spells are known, not
-  held, so casting is immediate as long as mana and cooldown allow it.
+  (stop-and-swap, ~0.9s) — no hotkey instant-switching. Preparing a known
+  spell is immediate, but every cast has a visible server-timed windup before
+  healing resolves or a projectile launches.
+- Equipment wears down through use, spells have finite casts, and cache
+  rewards also have a real-time circulation limit. When a reward ends, its
+  source chest returns after a short random delay at a different valid map
+  location with a newly rolled reward.
 - Other living players appear in first person as unlabeled hooded hunters.
   When one is killed, their fallen avatar briefly displays their name during
   the respawn window; living-player names and health remain hidden.
@@ -41,52 +47,110 @@ real multi-level / fog-of-war behaviour. Note that with `revealAll` on, the
 first-person view's minimap will show the entire level from the start too —
 that's expected; it only reflects real fog-of-war once the flag is off.
 
-## Running it
+## Quick start
+
+The host needs Git, Node.js 20 or newer, and npm. This is a private repository,
+so the host must also have access to `BFH-coder01/DungeonHunter01` on GitHub.
 
 ```bash
-npm install
+git clone git@github.com:BFH-coder01/DungeonHunter01.git
+cd DungeonHunter01
+npm ci
 npm start
 ```
 
 The server prints a LAN URL (e.g. `http://192.168.1.23:8080`) — open that on
 any device on the same wifi to join, or add `/dm.html` for the spectator
-view. `npm run dev` restarts on file changes.
+view. Port 8080 is the default; it changes only when the host sets the `PORT`
+environment variable. `npm run dev` restarts on file changes.
+
+There are no Python dependencies. `requirements.txt` is present for deployment
+systems that expect it, while `package-lock.json` is the authoritative runtime
+dependency lockfile. See [SETUP.md](SETUP.md) for private-clone options,
+Windows firewall guidance, verification, updating, and port troubleshooting.
+
+## Documentation
+
+- [SETUP.md](SETUP.md) — fresh clone, installation, LAN access, verification,
+  updating, and deployment notes.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — runtime topology, authority boundaries,
+  protocol flow, visibility policy, combat, audio, and known constraints.
+- [CLAUDE.md](CLAUDE.md) — implementation guardrails and handoff notes for
+  coding agents.
 
 ## Layout
 
 ```
 src/
-  shared/     constants, config, RNG, item tables — used by server AND client
+  shared/     constants, sound data, config, RNG, and item tables
   server/     authoritative simulation: dungeon generation, game state, ws/http server
 public/
   index.html, client.js   participant first-person view
   dm.html, dm.js          DungeonMaster spectator view
+  audio.js, sfx/          spatial playback and source audio
   style.css               shared styling for both
+SETUP.md                  fresh-clone and host instructions
+ARCHITECTURE.md           system design and data-flow reference
 ```
 
-The client fetches shared code straight from `/shared/*` — server and browser
-run the exact same constants/config/item definitions, so there's no
-duplication to drift out of sync.
+The server exposes `src/shared/` at `/shared/`. Browser modules import the
+protocol/constants and sound catalogue directly; server-only configuration,
+item tables, and seeded RNG code remain in the same shared source area without
+being bundled. There is no frontend build step.
 
 ## Controls — participant view
 
-- Forward/back: W/S or ↑/↓
-- Strafe left/right: A/D
+- Forward/back: W/S or ↑/↓; strafe left/right: A/D. Movement is charged per
+  server cycle, so brief separated taps conserve stamina while holding a
+  direction produces continuous fast movement and continuous drain.
 - Turn: mouse-look (click the view to capture the pointer; Esc releases it)
   where the browser/environment supports pointer lock, or hold ←/→ for a
   smooth continuous turn otherwise. An earlier version used a discrete
   keyboard snap-turn, which yanked your facing (and therefore "forward")
   straight into a wall mid-corridor — holding to turn gradually doesn't have
   that problem.
-- Attack (equipped weapon): left click
-- Cast (equipped spell): right click / space
+- Activate left hand: Z or left click
+- Activate right hand: M or right click
+- Cast prepared spell: Space
 - Open a cache / pick up a floor item: E or O. Caches can be opened from
   about a tile away; loose floor items need you standing on them.
-- Inventory: click a slot to equip it, right-click a slot to drop it. Number
-  keys 1–8 also equip a slot.
+- Inventory: slots 1–4 belong to the left hand and 5–8 to the right. Click or
+  press 1–8 to equip/toggle an item on that side, drag slots to rearrange the
+  loadout, and right-click to drop. A shield activates a directional dodge;
+  two equipped weapons make the left weapon an off-hand attack at half damage.
 
-The DungeonMaster view has no controls — it's a read-only overview. Just open
-`/dm.html` and watch.
+Movement, weapons, shield dodges, and spells consume the same stamina pool.
+Every successful movement cycle travels at 1.4× base speed and drains 14
+stamina per second; zero stamina prevents further movement. Regeneration is 10
+stamina per second and begins one second after all forward, backward, or
+sidestep input is released. This makes spaced taps sustainable while continuous
+running remains costly. Only one attack, cast, dodge, or weapon swap can be
+active at a time, and each weapon slows movement by its own amount during
+wind-up and recovery. The server also rate-limits input and action messages per
+connection so key spam cannot flood the simulation.
+
+Each generated level also contains one animated red battle portal at a seeded
+random valid floor tile in the map's outer area, outside the battle destination
+and central zone. Crossing it
+pulls every living player on that level into spread positions inside the same
+large room. The destination room keeps its ordinary corridor exits, so the
+group can fight or flee. The portal then cools down for 20 seconds before it
+can gather the group again.
+
+Three additional portal networks link distant parts of the map: one green
+pair, one blue pair, and one yellow pair. Each pair is one-to-one and
+bidirectional. Enter either endpoint to arrive at its matching color; step out
+of the arrival portal and enter it again to return to the starting endpoint.
+All portal locations are sent to every player as global navigation landmarks.
+Distant portals clamp to the edge of the minimap as directional markers, and
+nearby portal glow remains visible through walls.
+
+The DungeonMaster view includes a collapsible **Game Settings** panel. It can
+change stamina regeneration and delay, movement drain and speed, boon lifetime,
+chest regeneration delay, and battle-portal cooldown without restarting. Apply
+updates the running authoritative simulation and Reset restores values from
+`src/shared/config.js`. This trusted test build deliberately has no DM
+authentication yet.
 
 ## Ambient sound
 
@@ -116,15 +180,17 @@ when they stop.
   deltas (their input state isn't known to us, only their position); for
   yourself it's read directly from held movement keys.
 
-**Ambient points** — 12 authoritative points are placed on floor tiles when
-each seeded dungeon level is generated. Their locations, 1-3 assigned clips,
+**Ambient points** — authoritative points scale with dungeon dimensions, with
+a 12-point minimum and 36 points on the current 192×132
+test map. Farthest-point placement keeps coverage even rather than clustered.
+Their locations, 1-3 assigned clips,
 and individual/group mode are therefore identical for every participant and
 visible in full on the DungeonMaster map. A player receives a point only when
 they approach its audible radius. Each clip runs on its own timer (the interval
 scales with the clip duration so a 38s clip does not retrigger every 15s).
 **Individual** clips have nearby within-tile source positions; **group** clips
 share one exact-position panner. Web Audio applies directional panning and
-linear distance attenuation out to ~10 tiles. Ambient radius, reference
+linear distance attenuation out to ~22 tiles. Ambient radius, reference
 distance, and gain are configured centrally in `src/shared/sounds.js` without
 changing footstep volume.
 
@@ -134,14 +200,17 @@ uses, so direction matches what's on screen.
 
 ## Architecture notes
 
+The detailed architecture reference is [ARCHITECTURE.md](ARCHITECTURE.md).
+
 - The server is authoritative for everything — position, combat, inventory.
   Clients only ever send movement intent (`mx`, `my`, view angle) and
-  discrete actions (attack/cast/pickup/drop/equip); they never assert state.
+  discrete actions (attack/cast/pickup/drop/equip/move-slot); they never assert
+  state.
 - The first-person renderer is a classic grid-DDA raycaster (Wolfenstein-style).
   Walls, floor and ceiling are all texture-mapped with procedurally-generated
   stone textures (drawn once to an offscreen canvas at load — no image
   assets, no build step) rather than real photos, partly to keep the
-  zero-dependency architecture and partly to sidestep licensing questions
+  zero-build browser architecture and partly to sidestep licensing questions
   around using stock photography or 3D-model-site assets as game content.
   Walls are drawn per-column via `drawImage` (`RAYS` columns, not full pixel
   width — deliberately chunky/retro and cheap); floor/ceiling use true
@@ -162,6 +231,21 @@ uses, so direction matches what's on screen.
   ~20Hz server snapshots with light exponential smoothing to take the edge
   off the tick rate. Worth revisiting if movement ever feels laggy on a
   busier LAN.
+- Weapon attacks have server-timed windup and release phases. Dagger stab,
+  sword/maul swing, axe cleave, and spear thrust use different arcs, ranges,
+  target counts, and first-person motion. Shields are cache items and every
+  level is guaranteed at least one; activating that hand performs a short
+  directional dodge with a brief invulnerability window and cooldown.
+- Spells visibly converge as sparkles before release. Spark, Frost Lance, and
+  Ember Burst then travel as server-authoritative straight-line projectiles;
+  they lose damage energy with distance and stop on walls, unopened chests, or
+  players. Frost slows on a real hit, Ember splashes nearby targets, and Mend
+  heals only after its windup completes. Throwing Knives use the same travel
+  model but land as recoverable floor items after impact or range expiry.
+- Inventory slots show remaining equipment condition and spell casts. Weapons,
+  shields, and spells do not expire while idle; their source chest waits until
+  wear or casts exhaust them. Temporary boons show their remaining two-minute
+  lifetime in the HUD and release their source chest when the effect ends.
 
 ## Known gaps in this pass
 

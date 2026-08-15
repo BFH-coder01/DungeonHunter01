@@ -115,6 +115,7 @@ html, body {
 }
 .bar .fill { position: absolute; inset: 0; width: 100%; transform-origin: left; background: var(--ink); }
 .bar.mp .fill { background: #4dc3ff; }
+.bar.stamina .fill { background: #f0c84b; }
 .bar span {
   position: relative;
   z-index: 1;
@@ -136,9 +137,21 @@ html, body {
 }
 .stat b { color: var(--warn); }
 
-#deadBanner, #swapBanner {
+#boons {
   position: absolute;
   top: 46px;
+  left: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10px;
+}
+#boons div { background: rgba(0, 0, 0, 0.55); padding: 2px 6px; border-left: 2px solid var(--warn); }
+#boons div.bad { color: var(--danger); border-color: var(--danger); }
+
+#deadBanner, #swapBanner {
+  position: absolute;
+  top: 84px;
   left: 14px;
   border: 1px solid var(--danger);
   color: var(--danger);
@@ -146,7 +159,7 @@ html, body {
   padding: 4px 10px;
   font-size: 12px;
 }
-#swapBanner { border-color: var(--warn); color: var(--warn); top: 46px; }
+#swapBanner { border-color: var(--warn); color: var(--warn); top: 84px; }
 
 #inventory {
   position: absolute;
@@ -158,9 +171,19 @@ html, body {
   pointer-events: auto;
 }
 
+#inventory::before, #inventory::after {
+  position: absolute;
+  bottom: 81px;
+  color: var(--ink-dim);
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+#inventory::before { content: 'LEFT — L SHIFT'; left: 0; }
+#inventory::after { content: 'RIGHT — R SHIFT'; right: 0; }
+
 .slot {
   width: 64px;
-  height: 64px;
+  height: 76px;
   border: 1px solid var(--ink-dim);
   background: rgba(0, 0, 0, 0.55);
   font-size: 10px;
@@ -177,13 +200,19 @@ html, body {
 .slot:hover { border-color: var(--ink); }
 .slot .k { position: absolute; top: 2px; left: 4px; color: var(--ink-dim); font-size: 9px; }
 .slot.equipped { border-color: var(--warn); box-shadow: inset 0 0 6px rgba(255, 207, 77, 0.4); }
+.slot.left-equipped { border-color: #4dc3ff; box-shadow: inset 0 0 7px rgba(77, 195, 255, 0.42); }
+.slot.right-equipped { border-color: var(--warn); box-shadow: inset 0 0 7px rgba(255, 207, 77, 0.42); }
+.slot.spell-equipped { outline: 1px solid rgba(180, 110, 255, 0.8); }
+.slot.right-bank-start { margin-left: 22px; }
 .slot.weapon .name { color: #ff9f5a; }
 .slot.spell .name { color: #4dc3ff; }
+.slot.shield .name { color: #c7d5df; }
+.slot .lifecycle { color: #d9bf72; font-size: 8px; white-space: nowrap; }
 .slot.empty { border-style: dashed; }
 
 #log {
   position: absolute;
-  bottom: 100px;
+  bottom: 112px;
   right: 14px;
   width: 260px;
   display: flex;
@@ -236,6 +265,46 @@ html, body {
   padding: 3px 8px;
 }
 .rosterRow.dead { color: var(--danger); opacity: 0.7; }
+
+#dmControls {
+  position: absolute;
+  top: 62px;
+  left: 14px;
+  width: 270px;
+  color: var(--ink);
+  font-size: 11px;
+}
+#dmControls button {
+  border: 1px solid var(--ink-dim);
+  background: rgba(0, 0, 0, 0.82);
+  color: var(--ink);
+  padding: 6px 9px;
+  font: inherit;
+  cursor: pointer;
+}
+#dmControls button:hover { border-color: var(--ink); }
+#dmSettingsForm {
+  margin-top: 5px;
+  padding: 10px;
+  border: 1px solid var(--ink-dim);
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+#dmSettingsForm label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#dmSettingsForm input {
+  width: 76px;
+  border: 1px solid var(--ink-dim);
+  background: #04070a;
+  color: var(--warn);
+  padding: 3px 5px;
+  font: inherit;
+}
+.dmSettingsActions { display: flex; gap: 6px; margin-top: 3px; }
+.dmSettingsActions button { flex: 1; }
+#dmSettingsStatus { min-height: 14px; color: var(--ink-dim); }
+#dmSettingsStatus.error { color: var(--danger); }
 
 /* --- first-person (participant) view --- */
 

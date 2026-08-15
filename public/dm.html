@@ -16,6 +16,25 @@
 
   <div id="dmRoster"></div>
 
+  <aside id="dmControls">
+    <button id="dmControlsToggle" type="button">GAME SETTINGS</button>
+    <form id="dmSettingsForm" class="hidden">
+      <label>Stamina regen / sec <input data-setting="staminaRegenPerSec" type="number" min="0" max="50" step="1" /></label>
+      <label>Regen delay (sec) <input data-setting="staminaRegenDelayMs" data-scale="1000" type="number" min="0" max="10" step="0.1" /></label>
+      <label>Movement drain / sec <input data-setting="movementStaminaPerSec" type="number" min="0" max="100" step="1" /></label>
+      <label>Movement speed multiplier <input data-setting="movementSpeedScale" type="number" min="0.25" max="3" step="0.05" /></label>
+      <label>Boon lifetime (sec) <input data-setting="boonLifetimeMs" data-scale="1000" type="number" min="5" max="1800" step="5" /></label>
+      <label>Chest delay minimum (sec) <input data-setting="cacheRespawnMinMs" data-scale="1000" type="number" min="0" max="300" step="1" /></label>
+      <label>Chest delay maximum (sec) <input data-setting="cacheRespawnMaxMs" data-scale="1000" type="number" min="0" max="300" step="1" /></label>
+      <label>Battle portal cooldown (sec) <input data-setting="battlePortalCooldownMs" data-scale="1000" type="number" min="0" max="600" step="1" /></label>
+      <div class="dmSettingsActions">
+        <button type="submit">APPLY</button>
+        <button id="dmSettingsReset" type="button">RESET</button>
+      </div>
+      <div id="dmSettingsStatus">Changes apply to the running session.</div>
+    </form>
+  </aside>
+
   <script type="module" src="/dm.js"></script>
 </body>
 </html>

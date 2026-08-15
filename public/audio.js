@@ -113,22 +113,28 @@ export function createAmbientAudio() {
   // linear distance attenuation.
   function playAmbient(soundId, panner) {
     const buf = ambientBuffers.get(soundId);
-    if (!buf) return;
+    if (!buf || ctx.state !== 'running') return false;
     const src = ctx.createBufferSource();
     src.buffer = buf;
     src.playbackRate.value = 0.97 + Math.random() * 0.06;
     src.connect(panner);
     src.start();
+    return true;
   }
 
   function scheduleClip(sound, panner) {
     const minMs = Math.max(12000, sound.dur * 1400);
     const maxMs = minMs + Math.max(20000, sound.dur * 2000);
     const fire = () => {
-      playAmbient(sound.id, panner);
+      // Large WAVs may still be decoding when a point is first installed.
+      // Retry promptly instead of turning one miss into another minute of silence.
+      if (!playAmbient(sound.id, panner)) {
+        setTimeout(fire, 1000);
+        return;
+      }
       setTimeout(fire, minMs + Math.random() * (maxMs - minMs));
     };
-    setTimeout(fire, Math.random() * maxMs);
+    setTimeout(fire, 1000 + Math.random() * 3000);
   }
 
   function installQueuedPoints() {

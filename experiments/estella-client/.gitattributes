@@ -1,0 +1,6 @@
+# Preserve upstream bytes across Windows checkouts: builds verify these hashes.
+vendor/** -text
+*.js text eol=lf
+*.mjs text eol=lf
+# This later rule also protects vendored JavaScript from the source rule above.
+vendor/**/*.js -text

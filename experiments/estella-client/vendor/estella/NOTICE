@@ -1,0 +1,58 @@
+Estella / ESEngine
+Copyright (c) 2024-present ESEngine Team
+
+This product is licensed under the Apache License, Version 2.0 (the "License");
+you may not use this product except in compliance with the License. A copy of
+the License is provided in the LICENSE file, and the original is available at
+<http://www.apache.org/licenses/LICENSE-2.0>.
+
+Estella is free for any use, including commercial use. There is no separate
+commercial license and no noncommercial restriction. See BUSINESS_MODEL.md for
+how the project is funded and what (optional, separately licensed) hosted and
+"pro" add-ons exist alongside the open-source engine.
+
+================================================================================
+Third-Party Components
+================================================================================
+
+This product bundles third-party components under their own licenses. Those
+licenses apply only to the corresponding component, not to Estella as a whole,
+and Estella's Apache-2.0 license does not extend to them. Each component's full
+license text is included in its directory under third_party/.
+
+  Component            Location                          License
+  -------------------  --------------------------------  ------------------------
+  Box2D                third_party/box2d                 MIT
+  Jolt Physics         third_party/jolt                  MIT
+  NVIDIA PhysX 5       third_party/physx                 Apache-2.0
+  GLFW                 third_party/glfw                  zlib/libpng
+  GLM                  third_party/glm                   The Happy Bunny / MIT
+  nlohmann/json        third_party/nlohmann              MIT
+  doctest              third_party/doctest               MIT
+  glad                 third_party/glad                  MIT / Public Domain
+  cute_tiled           third_party/cute_tiled            zlib / Public Domain
+  stb                  third_party/stb                   MIT / Public Domain
+  basis_universal      third_party/basis_universal       Apache-2.0
+  Yoga                 third_party/yoga                  MIT
+  pl_mpeg              third_party/pl_mpeg               MIT
+  Spine Runtimes       third_party/spine-runtimes-*      Spine Runtimes License
+  DragonBones          third_party/dragonbones           MIT
+  RapidJSON            third_party/rapidjson             MIT
+
+The desktop editor additionally bundles an FFmpeg binary (via the ffmpeg-static
+npm package; FFmpeg is a trademark of Fabrice Bellard). It is licensed under the
+GPL (see the LICENSE file inside the ffmpeg-static package) and is invoked by
+the editor's asset cook strictly as a separate external process — it is not
+linked into, nor does its license extend to, Estella itself. It does not ship
+in exported games. Set ESTELLA_FFMPEG to use a system FFmpeg instead.
+
+IMPORTANT — Spine Runtimes are NOT open source. Relicensing Estella to Apache-2.0
+does NOT change this: the Spine Runtimes remain governed by the Spine Runtimes
+License Agreement from Esoteric Software (see third_party/spine-runtimes-*/LICENSE).
+Any use of the Spine integration — including in otherwise-free commercial games —
+requires a valid Spine license obtained directly from Esoteric Software. This
+obligation is independent of, and additional to, Estella's own Apache-2.0 license.
+If you ship without Spine, this obligation does not apply to you.
+
+Where a bundled component does not carry a top-level license file, its license
+header appears in the component's source files.

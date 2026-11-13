@@ -1,6 +1,6 @@
 # Estella proof of concept — implementation and architecture plan
 
-Status: Proposed / documentation baseline
+Status: Implemented POC / user review pending — see [evaluation](EVALUATION.md)
 Date: 2026-11-13
 Repository: BFH-coder01/DungeonHunter01
 Branch: feature/estella-poc

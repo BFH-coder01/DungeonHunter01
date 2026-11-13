@@ -1,0 +1,12 @@
+{
+  "date": "2026-11-13T23:28:25.408Z",
+  "fogTiles": 59,
+  "mapTiles": 2816,
+  "renderedTiles": 59,
+  "meshes": 12,
+  "playerOnlyProtocol": true,
+  "blurStopsMovement": true,
+  "serverDisconnectClearsScene": true,
+  "dmPayloadRejected": true,
+  "errors": []
+}

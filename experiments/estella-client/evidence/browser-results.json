@@ -1,0 +1,834 @@
+{
+  "date": "2026-11-13T23:41:07.075Z",
+  "browser": "157.0.4341.46",
+  "loadMs": 512,
+  "durationSeconds": 900,
+  "initialPosition": {
+    "x": 26.5,
+    "y": 18.5
+  },
+  "movedPosition": {
+    "x": 26.5,
+    "y": 18.5
+  },
+  "settledDrift": 0,
+  "errors": [],
+  "samples": [
+    {
+      "elapsed": 10020,
+      "snapshots": 339,
+      "wasmBytes": 17301504,
+      "jsHeap": 17356358,
+      "medianFPS": 59.880239520962,
+      "onePercentLowFPS": 59.171597633131,
+      "meshes": 340
+    },
+    {
+      "elapsed": 20035,
+      "snapshots": 531,
+      "wasmBytes": 17301504,
+      "jsHeap": 17121898,
+      "medianFPS": 59.880239520962,
+      "onePercentLowFPS": 59.171597633131,
+      "meshes": 340
+    },
+    {
+      "elapsed": 30052,
+      "snapshots": 725,
+      "wasmBytes": 17301504,
+      "jsHeap": 16024366,
+      "medianFPS": 59.880239520968516,
+      "onePercentLowFPS": 59.171597633131,
+      "meshes": 340
+    },
+    {
+      "elapsed": 40067,
+      "snapshots": 918,
+      "wasmBytes": 17301504,
+      "jsHeap": 19617138,
+      "medianFPS": 59.880239520968516,
+      "onePercentLowFPS": 59.171597633131,
+      "meshes": 340
+    },
+    {
+      "elapsed": 50083,
+      "snapshots": 1110,
+      "wasmBytes": 17301504,
+      "jsHeap": 23180790,
+      "medianFPS": 59.880239520968516,
+      "onePercentLowFPS": 59.171597633131,
+      "meshes": 340
+    },
+    {
+      "elapsed": 60102,
+      "snapshots": 1298,
+      "wasmBytes": 17301504,
+      "jsHeap": 21838070,
+      "medianFPS": 59.880239520968516,
+      "onePercentLowFPS": 59.171597633131,
+      "meshes": 340
+    },
+    {
+      "elapsed": 70118,
+      "snapshots": 1487,
+      "wasmBytes": 17301504,
+      "jsHeap": 19131326,
+      "medianFPS": 59.880239520968516,
+      "onePercentLowFPS": 59.17159763310553,
+      "meshes": 340
+    },
+    {
+      "elapsed": 80135,
+      "snapshots": 1681,
+      "wasmBytes": 17301504,
+      "jsHeap": 22518958,
+      "medianFPS": 59.880239520968516,
+      "onePercentLowFPS": 59.17159763310553,
+      "meshes": 340
+    },
+    {
+      "elapsed": 90151,
+      "snapshots": 1871,
+      "wasmBytes": 17301504,
+      "jsHeap": 21197278,
+      "medianFPS": 59.880239520968516,
+      "onePercentLowFPS": 59.17159763310553,
+      "meshes": 340
+    },
+    {
+      "elapsed": 100167,
+      "snapshots": 2066,
+      "wasmBytes": 17301504,
+      "jsHeap": 19313254,
+      "medianFPS": 59.880239520968516,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 110184,
+      "snapshots": 2260,
+      "wasmBytes": 17301504,
+      "jsHeap": 22425666,
+      "medianFPS": 59.880239520968516,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 120198,
+      "snapshots": 2451,
+      "wasmBytes": 17301504,
+      "jsHeap": 21189722,
+      "medianFPS": 59.880239520968516,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 130217,
+      "snapshots": 2645,
+      "wasmBytes": 17301504,
+      "jsHeap": 19657378,
+      "medianFPS": 59.880239520968516,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 140236,
+      "snapshots": 2834,
+      "wasmBytes": 17301504,
+      "jsHeap": 22347246,
+      "medianFPS": 59.8802395210207,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 150251,
+      "snapshots": 3027,
+      "wasmBytes": 17301504,
+      "jsHeap": 21132134,
+      "medianFPS": 59.8802395210207,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 160266,
+      "snapshots": 3218,
+      "wasmBytes": 17301504,
+      "jsHeap": 19908038,
+      "medianFPS": 59.8802395210207,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 170284,
+      "snapshots": 3406,
+      "wasmBytes": 17301504,
+      "jsHeap": 21938566,
+      "medianFPS": 59.8802395210207,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 180300,
+      "snapshots": 3597,
+      "wasmBytes": 17301504,
+      "jsHeap": 18753518,
+      "medianFPS": 59.8802395210207,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 190316,
+      "snapshots": 3789,
+      "wasmBytes": 17301504,
+      "jsHeap": 17036624,
+      "medianFPS": 59.8802395210207,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 200334,
+      "snapshots": 3975,
+      "wasmBytes": 17301504,
+      "jsHeap": 19044988,
+      "medianFPS": 59.8802395210207,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 210348,
+      "snapshots": 4162,
+      "wasmBytes": 17301504,
+      "jsHeap": 21909248,
+      "medianFPS": 59.8802395210207,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 220366,
+      "snapshots": 4352,
+      "wasmBytes": 17301504,
+      "jsHeap": 19138776,
+      "medianFPS": 59.8802395210207,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 230383,
+      "snapshots": 4545,
+      "wasmBytes": 17301504,
+      "jsHeap": 20970600,
+      "medianFPS": 59.8802395210207,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 240402,
+      "snapshots": 4736,
+      "wasmBytes": 17301504,
+      "jsHeap": 19422308,
+      "medianFPS": 59.8802395210207,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 250417,
+      "snapshots": 4927,
+      "wasmBytes": 17301504,
+      "jsHeap": 18254436,
+      "medianFPS": 59.8802395210207,
+      "onePercentLowFPS": 59.17159763315647,
+      "meshes": 340
+    },
+    {
+      "elapsed": 260436,
+      "snapshots": 5120,
+      "wasmBytes": 17301504,
+      "jsHeap": 19545588,
+      "medianFPS": 59.8802395210207,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 270451,
+      "snapshots": 5306,
+      "wasmBytes": 17301504,
+      "jsHeap": 17837420,
+      "medianFPS": 59.8802395210207,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 280471,
+      "snapshots": 5493,
+      "wasmBytes": 17301504,
+      "jsHeap": 22619524,
+      "medianFPS": 59.88023952091634,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 290483,
+      "snapshots": 5678,
+      "wasmBytes": 17301504,
+      "jsHeap": 22383064,
+      "medianFPS": 59.88023952091634,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 300501,
+      "snapshots": 5865,
+      "wasmBytes": 17301504,
+      "jsHeap": 22376832,
+      "medianFPS": 59.88023952091634,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 310516,
+      "snapshots": 6055,
+      "wasmBytes": 17301504,
+      "jsHeap": 21683284,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 320535,
+      "snapshots": 6244,
+      "wasmBytes": 17301504,
+      "jsHeap": 19690384,
+      "medianFPS": 59.88023952091634,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 330549,
+      "snapshots": 6431,
+      "wasmBytes": 17301504,
+      "jsHeap": 18459616,
+      "medianFPS": 59.88023952091634,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 340569,
+      "snapshots": 6620,
+      "wasmBytes": 17301504,
+      "jsHeap": 18751581,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 350585,
+      "snapshots": 6808,
+      "wasmBytes": 17301504,
+      "jsHeap": 17891824,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 360603,
+      "snapshots": 7000,
+      "wasmBytes": 17301504,
+      "jsHeap": 22879659,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 370620,
+      "snapshots": 7188,
+      "wasmBytes": 17301504,
+      "jsHeap": 22413571,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 380636,
+      "snapshots": 7375,
+      "wasmBytes": 17301504,
+      "jsHeap": 20623909,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 390653,
+      "snapshots": 7567,
+      "wasmBytes": 17301504,
+      "jsHeap": 20553339,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 400671,
+      "snapshots": 7756,
+      "wasmBytes": 17301504,
+      "jsHeap": 18628118,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 410684,
+      "snapshots": 7941,
+      "wasmBytes": 17301504,
+      "jsHeap": 17970730,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 420702,
+      "snapshots": 8134,
+      "wasmBytes": 17301504,
+      "jsHeap": 17442923,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 430718,
+      "snapshots": 8320,
+      "wasmBytes": 17301504,
+      "jsHeap": 21189902,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 440736,
+      "snapshots": 8515,
+      "wasmBytes": 17301504,
+      "jsHeap": 20293339,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 450752,
+      "snapshots": 8704,
+      "wasmBytes": 17301504,
+      "jsHeap": 17254538,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 460769,
+      "snapshots": 8894,
+      "wasmBytes": 17301504,
+      "jsHeap": 20854068,
+      "medianFPS": 59.88023952091634,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 470785,
+      "snapshots": 9083,
+      "wasmBytes": 17301504,
+      "jsHeap": 20697288,
+      "medianFPS": 59.88023952091634,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 480803,
+      "snapshots": 9269,
+      "wasmBytes": 17301504,
+      "jsHeap": 20236509,
+      "medianFPS": 59.88023952091634,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 490820,
+      "snapshots": 9457,
+      "wasmBytes": 17301504,
+      "jsHeap": 23702989,
+      "medianFPS": 59.88023952091634,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 500837,
+      "snapshots": 9644,
+      "wasmBytes": 17301504,
+      "jsHeap": 17496579,
+      "medianFPS": 59.88023952091634,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 510844,
+      "snapshots": 9833,
+      "wasmBytes": 17301504,
+      "jsHeap": 16500564,
+      "medianFPS": 59.88023952091634,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 520855,
+      "snapshots": 10030,
+      "wasmBytes": 17301504,
+      "jsHeap": 22463866,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 530870,
+      "snapshots": 10225,
+      "wasmBytes": 17301504,
+      "jsHeap": 17323812,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 540883,
+      "snapshots": 10417,
+      "wasmBytes": 17301504,
+      "jsHeap": 17644942,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 550902,
+      "snapshots": 10608,
+      "wasmBytes": 17301504,
+      "jsHeap": 21161379,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 560917,
+      "snapshots": 10797,
+      "wasmBytes": 17301504,
+      "jsHeap": 21805315,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 570934,
+      "snapshots": 10992,
+      "wasmBytes": 17301504,
+      "jsHeap": 15982716,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 580951,
+      "snapshots": 11183,
+      "wasmBytes": 17301504,
+      "jsHeap": 19322697,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 590970,
+      "snapshots": 11371,
+      "wasmBytes": 17301504,
+      "jsHeap": 19033053,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 600987,
+      "snapshots": 11561,
+      "wasmBytes": 17301504,
+      "jsHeap": 22449307,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 611004,
+      "snapshots": 11747,
+      "wasmBytes": 17301504,
+      "jsHeap": 22493378,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 621019,
+      "snapshots": 11933,
+      "wasmBytes": 17301504,
+      "jsHeap": 21312554,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 631037,
+      "snapshots": 12119,
+      "wasmBytes": 17301504,
+      "jsHeap": 17793128,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 641053,
+      "snapshots": 12307,
+      "wasmBytes": 17301504,
+      "jsHeap": 16745425,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 651072,
+      "snapshots": 12500,
+      "wasmBytes": 17301504,
+      "jsHeap": 17960985,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 661088,
+      "snapshots": 12692,
+      "wasmBytes": 17301504,
+      "jsHeap": 27852688,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 671106,
+      "snapshots": 12883,
+      "wasmBytes": 17301504,
+      "jsHeap": 27247386,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 681121,
+      "snapshots": 13077,
+      "wasmBytes": 17301504,
+      "jsHeap": 23642021,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 691139,
+      "snapshots": 13269,
+      "wasmBytes": 17301504,
+      "jsHeap": 23570201,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 701155,
+      "snapshots": 13460,
+      "wasmBytes": 17301504,
+      "jsHeap": 23591323,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 711170,
+      "snapshots": 13648,
+      "wasmBytes": 17301504,
+      "jsHeap": 19869483,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 721188,
+      "snapshots": 13836,
+      "wasmBytes": 17301504,
+      "jsHeap": 19921370,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 731205,
+      "snapshots": 14024,
+      "wasmBytes": 17301504,
+      "jsHeap": 19191953,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 741221,
+      "snapshots": 14210,
+      "wasmBytes": 17301504,
+      "jsHeap": 29034951,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 751238,
+      "snapshots": 14397,
+      "wasmBytes": 17301504,
+      "jsHeap": 27950720,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 761255,
+      "snapshots": 14588,
+      "wasmBytes": 17301504,
+      "jsHeap": 27611210,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 771270,
+      "snapshots": 14781,
+      "wasmBytes": 17301504,
+      "jsHeap": 24055325,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 781287,
+      "snapshots": 14971,
+      "wasmBytes": 17301504,
+      "jsHeap": 24415198,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 791304,
+      "snapshots": 15159,
+      "wasmBytes": 17301504,
+      "jsHeap": 22963434,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 801321,
+      "snapshots": 15349,
+      "wasmBytes": 17301504,
+      "jsHeap": 19335432,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 811338,
+      "snapshots": 15539,
+      "wasmBytes": 17301504,
+      "jsHeap": 19304495,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 821352,
+      "snapshots": 15730,
+      "wasmBytes": 17301504,
+      "jsHeap": 19026020,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 831371,
+      "snapshots": 15923,
+      "wasmBytes": 17301504,
+      "jsHeap": 28903275,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 841388,
+      "snapshots": 16115,
+      "wasmBytes": 17301504,
+      "jsHeap": 29188530,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 851404,
+      "snapshots": 16307,
+      "wasmBytes": 17301504,
+      "jsHeap": 17184104,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 861421,
+      "snapshots": 16498,
+      "wasmBytes": 17301504,
+      "jsHeap": 26897640,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 871438,
+      "snapshots": 16689,
+      "wasmBytes": 17301504,
+      "jsHeap": 28271831,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 881453,
+      "snapshots": 16883,
+      "wasmBytes": 17301504,
+      "jsHeap": 24688977,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 891472,
+      "snapshots": 17075,
+      "wasmBytes": 17301504,
+      "jsHeap": 24642320,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    },
+    {
+      "elapsed": 901488,
+      "snapshots": 17269,
+      "wasmBytes": 17301504,
+      "jsHeap": 24808824,
+      "medianFPS": 59.880239521125056,
+      "onePercentLowFPS": 59.171597633054574,
+      "meshes": 340
+    }
+  ],
+  "results": {
+    "threeClients": true,
+    "actions": true,
+    "reconnect": true,
+    "noPrivilegedMessages": true
+  }
+}

@@ -1,7 +1,7 @@
 # Estella POC baseline verification
 
-Date: 14 November 2026 (Australia/Brisbane)  
-Branch: `feature/estella-poc`  
+Date: 14 November 2026 (Australia/Brisbane)<br>
+Branch: `feature/estella-poc`<br>
 Environment: Windows, Node.js v24.16.0. Tests used individual source files retrieved from GitHub in a writable scratch directory.
 
 | Test | Result | Evidence |
@@ -14,3 +14,11 @@ Environment: Windows, Node.js v24.16.0. Tests used individual source files retri
 ## Decision
 
 HOLD at WP0/WP1. Resume in a workspace with access to the named checkout and its Git metadata, plus access to the package registry and a pinned Estella Web runtime. Capture local status before any branch operation. The working checkout was not modified during these checks.
+
+## Resumed implementation — 14 November 2026
+
+The earlier environment blockers were resolved in the local Windows checkout.
+Initial Git status was clean; implementation is isolated on `feature/estella-poc`.
+The pinned Estella Web runtime now builds and renders against the original server.
+This historical baseline is retained; current results and gate decisions are in
+[EVALUATION.md](EVALUATION.md).

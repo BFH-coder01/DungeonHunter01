@@ -1,0 +1,14 @@
+{
+  "date": "2026-11-13T23:33:06.929Z",
+  "pickup": {
+    "cacheId": "c0_9",
+    "changedFields": [
+      "inventory"
+    ]
+  },
+  "targetHealthBefore": 125,
+  "targetHealthAfter": 117,
+  "eventPackets": 0,
+  "transport": "existing src/server/index.js on port 8080",
+  "clientPositionWrites": false
+}

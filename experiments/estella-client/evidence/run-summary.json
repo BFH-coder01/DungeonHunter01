@@ -1,0 +1,32 @@
+{
+  "dateLocal": "2026-11-14",
+  "timezone": "Australia/Brisbane",
+  "baselineCommit": "ea7ab3ecf5da3eaf7ce4158c98bfadf50b9d3a47",
+  "implementationCommit": "b4936b39df503d98cba351844761383101147bd9",
+  "engineRelease": "v0.104.1",
+  "engineCommit": "aed656a66def98a47f136ef5384c008f108757e0",
+  "nodeVersion": "24.16.0",
+  "cpu": "AMD Ryzen 9 7900X 12-Core Processor",
+  "gpuInventory": ["AMD Radeon RX 7900 XTX", "AMD Radeon(TM) Graphics"],
+  "nodeTests": { "passed": 5, "failed": 0 },
+  "cleanInstallAndBuild": true,
+  "gitArchiveRuntimeHashBuild": true,
+  "legacySourceDiffEmpty": true,
+  "longRunSeconds": 900,
+  "configuredTickHz": 20,
+  "observedSnapshotHz": 18.99114718643855,
+  "settledDriftTiles": 0,
+  "medianFPS": 59.880239521125056,
+  "sampledOnePercentLowFPS": 59.171597633054574,
+  "wasmHeapBytes": 17301504,
+  "sampledJSHeapMinBytes": 15982716,
+  "sampledJSHeapMaxBytes": 29188530,
+  "reviewDecision": "Ready for user play-test; no merge approval",
+  "limitations": [
+    "Headless desktop measurements; no subjective listening or other-device guarantee",
+    "Approximately 60 FPS; strict median >=60 target not literally exceeded",
+    "No retained-object, whole-process or GPU-memory profiling",
+    "Long run precedes small HUD/reconnect/timing refinements; final build has separate smoke evidence",
+    "Existing server drops action events and can consume loot when inventory is full; preserved unchanged"
+  ]
+}

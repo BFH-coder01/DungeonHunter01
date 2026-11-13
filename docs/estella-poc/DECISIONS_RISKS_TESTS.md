@@ -1,9 +1,17 @@
 # Estella POC — architecture decision record, risks, issues and verification register
 
-Date: 2026-11-13 | Status: Planning only | Branch: feature/estella-poc
+Date: 2026-11-13 | Status: Historical plan; current evidence in [evaluation](EVALUATION.md) | Branch: feature/estella-poc
 Companion: [Implementation plan](IMPLEMENTATION_PLAN.md)
 
 ## Decision log
+
+Implementation update (14 November 2026): ADR-005/006 are proven by transform,
+fog and browser fixtures; ADR-007 is satisfied by the pinned v0.104.1 runtime;
+I01–I04 and I06 have implementation evidence. I05 has desktop headless measurements
+and remains subject to human/device review. I07 is preserved and tested in a
+disposable process. R01/R02/R03/R05/R07/R08/R09/R12/R14 now have mitigation evidence;
+R04/R06/R10 remain hardware/latency-dependent. The tables below retain the original
+planning judgments; [EVALUATION.md](EVALUATION.md) is the executed test ledger.
 
 | ID | Decision | Status | Reason | Revisit trigger |
 |---|---|---|---|---|

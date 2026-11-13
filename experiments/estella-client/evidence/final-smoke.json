@@ -1,0 +1,33 @@
+{
+  "date": "2026-11-13T23:49:03.246Z",
+  "browser": "157.0.4341.46",
+  "loadMs": 545,
+  "durationSeconds": 10,
+  "initialPosition": {
+    "x": 10.5,
+    "y": 21.5
+  },
+  "movedPosition": {
+    "x": 15.52,
+    "y": 21.5
+  },
+  "settledDrift": 0,
+  "errors": [],
+  "samples": [
+    {
+      "elapsed": 10019,
+      "snapshots": 347,
+      "wasmBytes": 17301504,
+      "jsHeap": 17962762,
+      "medianFPS": 59.880239520962,
+      "onePercentLowFPS": 59.523809523799216,
+      "meshes": 340
+    }
+  ],
+  "results": {
+    "threeClients": true,
+    "actions": true,
+    "reconnect": true,
+    "noPrivilegedMessages": true
+  }
+}

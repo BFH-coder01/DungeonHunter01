@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-13T23:34:22.932Z",
+  "browser": "157.0.4341.46",
+  "audio": {
+    "decoded": 12,
+    "started": 2
+  },
+  "movementIntents": true,
+  "inventorySlots": 8,
+  "attackCastPickupEquipIntents": true,
+  "serverManaConsumed": true,
+  "errors": [],
+  "warnings": [],
+  "note": "Headless confirms audio decode and source start, not subjective listening quality."
+}

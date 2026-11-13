@@ -23,7 +23,7 @@ https://github.com/nlohmann/json/blob/v3.11.3/LICENSE.MIT
 
 The upstream NOTICE lists a broader set of optional engine/editor components.
 This distribution excludes the editor, FFmpeg, assets from upstream examples,
-Spine modules, video decoders, native runtime and physics modules. The POC never
+Spine runtime binaries, video decoders, native runtime and physics modules. The POC never
 requests those optional components. The SDK's reachable module files retain
 upstream bytes and notices even where they contain unused API declarations.
 

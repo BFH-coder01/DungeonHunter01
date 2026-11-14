@@ -74,8 +74,13 @@ does not depend on those events and does not alter that behavior.
 
 ## Rollout
 
-The built client is served on port 5173. One existing player was active on port
-8080 during delivery, so that server has not been interrupted. A restart is the
-only remaining deployment step for remote equipment/attack timing, and it will
-reset that process's in-memory dungeon and player progress. Request the user's
-timing before stopping the active game. No merge to `main` is authorized.
+The built client is served on port 5173. The user approved restarting the active
+game, and the server was restarted on 14 November 2026 at approximately 22:17
+Australia/Brisbane. The restart reset the prior in-memory dungeon/player progress.
+Two temporary ordinary players verified the live server's own cooldown, remote
+equipped weapon and positive remote swing timing. Both test connections were then
+closed. Estella, original player and DM pages all returned HTTP 200.
+
+Evidence: `experiments/estella-client/evidence/rollout-results.json`.
+The full update is live and ready for user testing. Existing browser tabs should
+reload and rejoin. No merge to `main` is authorized or performed.

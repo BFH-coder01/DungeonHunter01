@@ -36,13 +36,17 @@ works when mouse lock is unavailable over LAN HTTP.
 | Left / right arrows | Turn |
 | Click the scene | Capture mouse for horizontal look |
 | Escape | Release mouse |
-| Space | Attack with equipped weapon |
+| Left click after mouse capture / Space / Attack button | Attack with equipped weapon |
 | E | Open nearby cache / pick up item |
-| Q | Cast equipped spell |
-| Inventory button | Equip weapon or spell |
+| Right click / Q / spell button | Cast equipped spell |
+| Inventory button / 1–8 | Equip weapon or spell |
 | Disconnect | Leave and reset; join again as a fresh player |
 
-Gold boxes are caches, teal boxes are dropped items, red figures are other hunters.
+Gold boxes are caches and teal boxes are dropped items. Other hunters have original
+hooded avatars with walking, weapon-swing, casting, damage and fallen poses.
+Living hunters have no name or health labels. Their actual held weapon and action
+timing come from optional server display fields; an older server still works but
+does not show remote weapons or swings. Restart the updated server to enable them.
 Green floor strips mark stairs; level traversal remains outside this POC.
 The camera follows server snapshots with a 50 ms interpolation buffer. Aim is
 responsive locally, but position, collisions, damage, inventory and visibility
@@ -59,6 +63,8 @@ npm run test:browser
 node tests/security-browser.mjs
 node tests/legacy-browser.mjs
 node tests/live-server.mjs
+node tests/combat-browser.mjs
+node tests/server-compatibility.mjs
 ```
 
 `npm ci` installs only the pinned Playwright test tool. Browser tests use installed
@@ -68,6 +74,28 @@ The security test briefly starts the existing server on port 8081 in a disposabl
 process with fog enabled in memory; no configuration files are changed.
 The live-server test walks ordinary test players to a cache and into attack range
 using movement intents; it makes real changes to the temporary running game.
+The combat browser test uses an isolated deterministic arena on port 8081, with
+test-only placement/inventory. It exercises all five weapons and a real
+server-confirmed kill without disturbing the normal game on port 8080.
+
+## Weapons and combat
+
+The first-person hand holds the equipped Rusted Dagger, Short Sword, War Axe,
+Spear or Maul. Models are made from original procedural geometry; no external
+assets are downloaded. The HUD shows the server-provided damage/range and a
+recovery meter. Heavier weapons animate over their existing longer swing period;
+the spear uses a thrust. Weapon changes lower the hand during the existing swap
+delay. Casting shows a brief spell-colored glow; it does not create a new projectile
+or change the server's instant targeting rules.
+
+Input immediately starts cosmetic feedback and sends only aim/movement followed
+by the existing action intent. Server snapshots reconcile cooldowns and drive
+health, mana, damage flashes, death and kill confirmation. No local hit result or
+damage amount is sent. The existing reach, facing cone, line-of-sight, mana and
+cooldown checks remain in `Game`.
+
+See [avatar/combat delivery](../../docs/estella-poc/AVATARS_COMBAT.md) for the small
+additive snapshot fields, test results, and rollout status.
 
 For the full three-view / memory run:
 

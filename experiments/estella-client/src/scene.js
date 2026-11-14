@@ -1,6 +1,8 @@
 import createModule from '../vendor/estella/esengine.js';
 import {createWebApp, Assets, Transform, Camera, ProjectionType, MeshRenderer, Light, LightType, Renderer} from '../vendor/estella/sdk/index.lean.js';
 import {toWorld,cameraRotation} from './model.js';
+import {hunterParts,weaponParts,spellColor,transformPart,partRotation} from './figures.js';
+import {attackPose,clamp} from './combat.js';
 const color = (r,g,b) => ({r,g,b,a:1});
 export async function createScene(canvas) {
   canvas.width=innerWidth; canvas.height=innerHeight;
@@ -9,6 +11,8 @@ export async function createScene(canvas) {
   const world=app.world;
   Renderer.setClearColor(.025,.035,.05,1);
   const mesh=(await app.getResource(Assets).load('mesh','builtin:cube')).handle;
+  const shapes={cube:mesh};
+  for(const name of ['sphere','cone','capsule','cylinder'])shapes[name]=(await app.getResource(Assets).load('mesh',`builtin:${name}`)).handle;
   const camera=world.spawn('First person camera');
   world.insert(camera,Transform,{position:{x:0,y:.62,z:0}});
   world.insert(camera,Camera,{projectionType:ProjectionType.Perspective,fov:75,nearPlane:.03,farPlane:70,isActive:true});
@@ -19,16 +23,54 @@ export async function createScene(canvas) {
   world.insert(sun,Transform,{rotation:{x:-.4,y:.2,z:0,w:.8944}});
   world.insert(sun,Light,{type:LightType.Directional,color:color(.55,.65,.8),intensity:.5,enabled:true});
   const tiles=new Map(), entities=new Map();
+  let held=[],heldName=null,castOrb=null;
   let knownTiles=0;
-  function box(name,position,scale,tint) {
+  function box(name,position,scale,tint,shape='cube',layer=0) {
     const e=world.spawn(name);
     world.insert(e,Transform,{position,scale:{x:scale.x/100,y:scale.y/100,z:scale.z/100}});
-    world.insert(e,MeshRenderer,{mesh,color:tint,opaque:true,cullBackfaces:true,lit:true,layer:0,enabled:true});
+    world.insert(e,MeshRenderer,{mesh:shapes[shape],color:tint,opaque:true,cullBackfaces:true,lit:layer===0,layer,enabled:true});
     return e;
   }
   function clear() {
-    for (const e of [...tiles.values()].flat().concat([...entities.values()])) world.despawn(e);
+    for (const e of [...tiles.values()].flat()) world.despawn(e);
+    for(const entry of entities.values())destroy(entry);
+    for(const part of held)world.despawn(part.entity);
+    held=[];heldName=null;if(castOrb!==null)world.despawn(castOrb);castOrb=null;
     tiles.clear(); entities.clear(); knownTiles=0;
+  }
+  function parts(definitions,layer=0){return definitions.map(part=>({...part,entity:box(part.name,{x:0,y:-100,z:0},{x:1,y:1,z:1},color(...part.c),part.mesh,layer)}));}
+  function pose(parts,anchor,aim,roll=0,scale=1,offset=()=>[0,0,0],flash=0){
+    for(const part of parts){
+      const d=offset(part),p=part.p.map((v,i)=>v+d[i]);
+      world.insert(part.entity,Transform,{position:transformPart(p,anchor,aim,roll,scale),rotation:partRotation(aim,roll),scale:{x:part.s[0]*scale/100,y:part.s[1]*scale/100,z:part.s[2]*scale/100}});
+      world.set(part.entity,MeshRenderer,{...world.get(part.entity,MeshRenderer),color:flash?color(.85,.2,.12):color(...part.c)});
+    }
+  }
+  function destroy(entry){for(const p of [...entry.body??[],...entry.weapon??[]])world.despawn(p.entity);if(entry.entity!==undefined)world.despawn(entry.entity);if(entry.orb!==undefined)world.despawn(entry.orb);}
+  function updateHunter(entry,item,x,z,model,now){
+    if(entry.name!==item.weapon?.name){for(const p of entry.weapon??[])world.despawn(p.entity);entry.weapon=parts(weaponParts(item.weapon?.name));entry.name=item.weapon?.name;}
+    const distance=entry.last?Math.hypot(x-entry.last.x,z-entry.last.z):0;
+    if(distance<1)entry.stride=(entry.stride??0)+distance*16;
+    entry.last={x,z};
+    const gait=distance>.0001?Math.sin(entry.stride)*.075:0;
+    if(entry.hp!==undefined&&item.hp<entry.hp)entry.hurt=now+160;entry.hp=item.hp;
+    const remaining=Math.max(0,(item.swingRemaining??0)-(now-model.received));
+    const swing=remaining>0?attackPose(1-remaining/(item.weapon?.swingMs??320),item.weapon?.name):{roll:-.2,forward:0,side:0,lift:0};
+    const facing=Number.isFinite(item.aim)?item.aim:0;
+    pose(entry.body,{x,y:item.alive?0:.25,z},facing,item.alive?0:Math.PI/2,1,part=>{
+      if(!item.alive)return [0,-.5,0];
+      if(part.group==='leftLeg')return [0,Math.abs(gait)*.25,gait];
+      if(part.group==='rightLeg')return [0,Math.abs(gait)*.25,-gait];
+      if(part.group==='rightArm')return [swing.side,swing.lift,swing.forward-gait*.4];
+      if(part.group==='leftArm')return [0,0,gait*.4];
+      return [0,Math.abs(gait)*.1,0];
+    },now<(entry.hurt??0));
+    const grip=transformPart(item.alive?[.23+swing.side,.43+swing.lift,.08+swing.forward]:[.35,.12,.1],{x,y:0,z},facing);
+    pose(entry.weapon,grip,facing,item.alive?swing.roll:Math.PI/2);
+    const castAge=item.cast?item.cast.cooldownMs-item.cast.remaining+(now-model.received):Infinity;
+    const flash=item.alive?clamp(1-castAge/350):0;
+    world.insert(entry.orb,Transform,{position:transformPart([-.24,.48,.15],{x,y:0,z},facing),scale:{x:flash*.0015,y:flash*.0015,z:flash*.0015}});
+    world.set(entry.orb,MeshRenderer,{...world.get(entry.orb,MeshRenderer),enabled:flash>0,color:color(...spellColor(item.cast?.name))});
   }
   function updateMap(model) {
     // Merge known horizontal runs; rebuilding only changed rows keeps draw count low.
@@ -61,17 +103,30 @@ export async function createScene(canvas) {
           const old=model.previous?.others.find(p=>p.id===item.id);
           if (old && old.alive===item.alive && Math.hypot(old.x-x,old.y-z)<2) {x=old.x+(x-old.x)*t;z=old.y+(z-old.y)*t;}
         }
-        if (!entities.has(key)) entities.set(key,box(kind,{x,y:height/2,z},{x:hunter?.36:.26,y:height,z:hunter?.36:.26},hunter?color(.62,.28,.26):kind==='cache'?color(.73,.52,.2):color(.3,.7,.7)));
-        const e=entities.get(key);
-        world.insert(e,Transform,{position:{x,y:height/2,z},scale:{x:(hunter?.36:.26)/100,y:height/100,z:(hunter?.36:.26)/100}});
+        if (!entities.has(key)) entities.set(key,hunter?{body:parts(hunterParts()),weapon:[],orb:box('spell glow',{x:0,y:-100,z:0},{x:.1,y:.1,z:.1},color(.5,.5,1),'sphere')}:{entity:box(kind,{x,y:height/2,z},{x:.26,y:height,z:.26},kind==='cache'?color(.73,.52,.2):color(.3,.7,.7))});
+        const entry=entities.get(key);
+        if(hunter)updateHunter(entry,item,x,z,model,now);
+        else world.insert(entry.entity,Transform,{position:{x,y:height/2,z},scale:{x:.0026,y:height/100,z:.0026}});
       }
     }
-    for (const [key,e] of entities) if (!wanted.has(key)) {world.despawn(e);entities.delete(key);}
+    for (const [key,e] of entities) if (!wanted.has(key)) {destroy(e);entities.delete(key);}
+  }
+  function viewWeapon(position,aim,combat,now){
+    const name=combat.alive?combat.weapon?.name:null;
+    if(name!==heldName){for(const p of held)world.despawn(p.entity);held=parts(name?[...weaponParts(name),{name:'gloved hand',p:[0,-.02,0],s:[.09,.1,.1],c:[.26,.15,.09],mesh:'sphere'}]:[],1);heldName=name;}
+    const swing=combat.attack===null?{roll:-.2,forward:0,side:0,lift:0}:attackPose(combat.attack,name);
+    const lower=combat.swapRemaining>0?.2:0;
+    const anchor=transformPart([.16+swing.side,-.20-lower+swing.lift,.45+swing.forward],toWorld(position.x,position.y,.62),aim);
+    pose(held,anchor,aim,swing.roll,.48);
+    if(castOrb===null)castOrb=box('First person spell',{x:0,y:-100,z:0},{x:.1,y:.1,z:.1},color(.5,.5,1),'sphere',1);
+    const flash=combat.alive?combat.castFlash:0;
+    world.insert(castOrb,Transform,{position:transformPart([-.19,-.12,.3],toWorld(position.x,position.y,.62),aim),scale:{x:flash*.0011,y:flash*.0011,z:flash*.0011}});
+    world.set(castOrb,MeshRenderer,{...world.get(castOrb,MeshRenderer),enabled:flash>0,color:color(...spellColor(combat.spell?.name))});
   }
   function look(position,aim) {
     world.insert(camera,Transform,{position:toWorld(position.x,position.y,.62),rotation:cameraRotation(aim)});
     world.insert(lamp,Transform,{position:toWorld(position.x,position.y,.95)});
   }
   addEventListener('resize',()=>{canvas.width=innerWidth;canvas.height=innerHeight;Renderer.resize(canvas.width,canvas.height);});
-  return {app,module,clear,updateMap,updateEntities,look,counts:()=>({tiles:knownTiles,meshes:[...tiles.values()].reduce((n,row)=>n+row.length,0),entities:entities.size})};
+  return {app,module,clear,updateMap,updateEntities,look,viewWeapon,counts:()=>({tiles:knownTiles,meshes:[...tiles.values()].reduce((n,row)=>n+row.length,0),entities:entities.size,avatars:[...entities.keys()].filter(k=>k.startsWith('hunter:')).length,heldWeapon:heldName})};
 }

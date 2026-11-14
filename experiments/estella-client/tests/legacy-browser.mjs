@@ -15,7 +15,8 @@ try {
   });
   p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='warning')warnings.push(m.text());});
   p.on('websocket',s=>{s.on('framesent',f=>sent.push(JSON.parse(f.payload)));s.on('framereceived',f=>{const m=JSON.parse(f.payload);if(m.type==='state')states.push(m);});});
-  await p.goto('http://127.0.0.1:8080');await p.locator('#nameInput').fill('Legacy regression');await p.locator('#joinBtn').click();
+  const base=process.env.GAME_URL??'http://127.0.0.1:8080';
+  await p.goto(base);await p.locator('#nameInput').fill('Legacy Check');await p.locator('#joinBtn').click();
   await p.waitForFunction(()=>window.audioEvidence.decoded>=1);
   await p.locator('#hud').waitFor({state:'visible'});
   await p.keyboard.down('w');await p.waitForTimeout(2000);await p.keyboard.up('w');
@@ -29,6 +30,9 @@ try {
   const audio=await p.evaluate(()=>window.audioEvidence);assert.ok(audio.decoded>0&&audio.started>0);
   assert.deepEqual(errors,[]);assert.ok(!warnings.some(w=>w.includes('[audio] failed')));
   await p.screenshot({path:'evidence/legacy-regression.png'});
-  await writeFile('evidence/legacy-results.json',JSON.stringify({date:new Date().toISOString(),browser:browser.version(),audio,movementIntents:true,inventorySlots:8,attackCastPickupEquipIntents:true,serverManaConsumed:true,errors,warnings,note:'Headless confirms audio decode and source start, not subjective listening quality.'},null,2)+'\n');
+  const dm=await browser.newPage();dm.on('pageerror',e=>errors.push(e.message));await dm.goto(`${base}/dm.html`);
+  await dm.waitForFunction(()=>document.getElementById('dmRoster').textContent.includes('Legacy Check'));
+  assert.deepEqual(errors,[]);
+  await writeFile(process.env.REPORT_FILE??'evidence/legacy-results.json',JSON.stringify({date:new Date().toISOString(),browser:browser.version(),audio,movementIntents:true,inventorySlots:8,attackCastPickupEquipIntents:true,serverManaConsumed:true,dmRoster:true,additiveSwingMetadata:Number.isFinite(states.at(-1).self.swingRemaining),errors,warnings,note:'Headless confirms audio decode and source start, not subjective listening quality.'},null,2)+'\n');
   console.log('PASS: legacy movement, inventory, actions and Web Audio smoke');
 }finally{await browser.close();}

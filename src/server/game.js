@@ -419,6 +419,7 @@ export class Game {
 
   snapshotFor(player) {
     const level = this.levels[player.level];
+    const now = Date.now();
 
     const others = [];
     for (const other of this.players.values()) {
@@ -432,6 +433,10 @@ export class Game {
         aim: round2(other.aim),
         alive: other.alive,
         hp: Math.round((other.health / other.maxHealth) * 100),
+        // Presentation only, disclosed under the same visibility check as the avatar.
+        weapon: weaponAppearance(this.findItem(other, other.equippedWeaponUid)),
+        swingRemaining: Math.max(0, other.swingUntil - now),
+        cast: castAppearance(this.findItem(other, other.equippedSpellUid), other.castReadyAt - now),
       });
     }
 
@@ -450,7 +455,6 @@ export class Game {
       .filter((p) => Math.hypot(p.x - player.x, p.y - player.y) <= AMBIENT_MAX_DIST + 2)
       .map(publicSoundPoint);
 
-    const now = Date.now();
     const snapshot = {
       t: now,
       self: {
@@ -467,6 +471,7 @@ export class Game {
         alive: player.alive,
         respawnIn: player.alive ? 0 : Math.max(0, player.respawnAt - now),
         swapRemaining: Math.max(0, player.swapUntil - now),
+        swingRemaining: Math.max(0, player.swingUntil - now),
         castRemaining: Math.max(0, player.castReadyAt - now),
         kills: player.kills,
         deaths: player.deaths,
@@ -548,6 +553,16 @@ function publicItem(item) {
   if (item.kind === 'weapon') Object.assign(out, { damage: item.damage, range: item.range, swingMs: item.swingMs });
   if (item.kind === 'spell') Object.assign(out, { damage: item.damage, heal: item.heal, manaCost: item.manaCost, cooldownMs: item.cooldownMs });
   return out;
+}
+
+function weaponAppearance(item) {
+  return item ? { name: item.name, swingMs: item.swingMs } : null;
+}
+
+function castAppearance(item, remaining) {
+  return item && remaining > 0
+    ? { name: item.name, cooldownMs: item.cooldownMs, remaining }
+    : null;
 }
 
 function publicSoundPoint(point) {

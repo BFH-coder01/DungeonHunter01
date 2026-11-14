@@ -1,5 +1,9 @@
 # Estella POC implementation and evaluation
 
+This is the completed baseline evaluation. The subsequent requested avatar/weapon
+work, including its additive server display fields, is documented separately in
+[AVATARS_COMBAT.md](AVATARS_COMBAT.md).
+
 Date: 14 November 2026 (Australia/Brisbane). Branch: `feature/estella-poc`.
 Original game baseline: `ea7ab3ecf5da3eaf7ce4158c98bfadf50b9d3a47`.
 Starting feature head: `1a4960602f3b6cebfefac5ed2738b6c85759b0a0`.

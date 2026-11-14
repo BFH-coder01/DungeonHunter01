@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-14T00:03:08.555Z",
+  "browser": "157.0.4341.46",
+  "weapons": [
+    "Rusted Dagger",
+    "Short Sword",
+    "War Axe",
+    "Spear",
+    "Maul"
+  ],
+  "remoteAvatar": true,
+  "remoteWeaponAndSwing": true,
+  "serverCooldowns": true,
+  "serverManaConsumed": true,
+  "serverKillConfirmed": true,
+  "cleanup": true,
+  "performance": {
+    "medianFPS": 59.880239520962,
+    "onePercentLowFPS": 59.17159763314374
+  },
+  "errors": []
+}

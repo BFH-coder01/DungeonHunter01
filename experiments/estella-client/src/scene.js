@@ -4,7 +4,7 @@ import {toWorld,cameraRotation} from './model.js';
 import {hunterParts,weaponParts,spellColor,transformPart,partRotation} from './figures.js';
 import {attackPose,clamp} from './combat.js';
 const color = (r,g,b) => ({r,g,b,a:1});
-export async function createScene(canvas) {
+export async function createScene(canvas, mode) {
   canvas.width=innerWidth; canvas.height=innerHeight;
   const module=await createModule({canvas,locateFile:file=>new URL(`../vendor/estella/${file}`,import.meta.url).href});
   const app=createWebApp(module,{getViewportSize:()=>({width:canvas.width,height:canvas.height}),depthLayers:1,msaaSamples:1});
@@ -13,6 +13,24 @@ export async function createScene(canvas) {
   const mesh=(await app.getResource(Assets).load('mesh','builtin:cube')).handle;
   const shapes={cube:mesh};
   for(const name of ['sphere','cone','capsule','cylinder'])shapes[name]=(await app.getResource(Assets).load('mesh',`builtin:${name}`)).handle;
+  let kit;
+  if (mode === '3d') {
+    const assets = app.getResource(Assets);
+    const loadTile = async (name, textureName) => {
+      try {
+        const geometry = await assets.load('mesh', `/dungeon-kit/${name}.esmesh`);
+        const texture = await assets.loadTexture(`/dungeon-kit/${textureName}.png`);
+        if (!geometry.handle || !texture.handle) throw new Error('Missing GPU asset handle');
+        return {mesh: geometry.handle, texture: texture.handle};
+      } catch (error) {
+        throw new Error(`3D dungeon kit (${name}, ${textureName}.png): ${error.message}. Run npm run build, then reload.`, {cause: error});
+      }
+    };
+    kit = [];
+    for (const name of ['wall', 'floor', 'stairs-down', 'stairs-up']) {
+      kit.push(await loadTile(name, name === 'wall' ? 'wall' : 'floor'));
+    }
+  }
   const camera=world.spawn('First person camera');
   world.insert(camera,Transform,{position:{x:0,y:.62,z:0}});
   world.insert(camera,Camera,{projectionType:ProjectionType.Perspective,fov:75,nearPlane:.03,farPlane:70,isActive:true});
@@ -80,6 +98,16 @@ export async function createScene(canvas) {
       for(let x=0;x<model.width;) {
         const t=model.tiles[z*model.width+x];
         if(t<0){x++;continue;}
+        if (kit) {
+          const entity = world.spawn(`Tile ${z}:${x}`);
+          world.insert(entity, Transform, {position:{x:x+.5,y:0,z:z+.5}});
+          world.insert(entity, MeshRenderer, {
+            ...kit[t], color:color(1,1,1), opaque:true, cullBackfaces:true, lit:true, enabled:true,
+          });
+          row.push(entity);
+          x++;
+          continue;
+        }
         let end=x+1;while(end<model.width && model.tiles[z*model.width+end]===t)end++;
         const wall=t===0,shade=z%2===0;
         row.push(box(`Row ${z}:${x}`,{x:(x+end)/2,y:wall?.85:-.06,z:z+.5},{x:end-x,y:wall?1.7:.12,z:1},wall?color(.31,.36,.4):t>1?color(.35,.5,.48):shade?color(.2,.23,.26):color(.23,.26,.29)));
@@ -128,5 +156,5 @@ export async function createScene(canvas) {
     world.insert(lamp,Transform,{position:toWorld(position.x,position.y,.95)});
   }
   addEventListener('resize',()=>{canvas.width=innerWidth;canvas.height=innerHeight;Renderer.resize(canvas.width,canvas.height);});
-  return {app,module,clear,updateMap,updateEntities,look,viewWeapon,counts:()=>({tiles:knownTiles,meshes:[...tiles.values()].reduce((n,row)=>n+row.length,0),entities:entities.size,avatars:[...entities.keys()].filter(k=>k.startsWith('hunter:')).length,heldWeapon:heldName})};
+  return {app,module,clear,updateMap,updateEntities,look,viewWeapon,counts:()=>({mode,tiles:knownTiles,meshes:[...tiles.values()].reduce((n,row)=>n+row.length,0),entities:entities.size,avatars:[...entities.keys()].filter(k=>k.startsWith('hunter:')).length,heldWeapon:heldName})};
 }

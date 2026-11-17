@@ -104,5 +104,14 @@ async function frame(now) {
   if(now-lastMetrics>1000){lastMetrics=now;const recent=frames.slice(-120);$('metrics').textContent=`${Math.round(1000/(recent.reduce((a,b)=>a+b,0)/recent.length))} FPS · ${(snapshots/Math.max(1,(now-connectedAt)/1000)).toFixed(1)} snapshots/s · ${scene.counts().tiles} known tiles`;}
   requestAnimationFrame(frame);
 }
-try {scene=await createScene($('canvas'));ready=true;$('joinButton').disabled=false;$('joinButton').textContent='Join dungeon';status('Estella ready · server-authoritative movement');last=performance.now();requestAnimationFrame(frame);}
+try {
+  const response = await fetch('/startup.json', {cache: 'no-store'});
+  if (!response.ok) throw new Error('Start the Estella host with a dungeon mode.');
+  const {mode} = await response.json();
+  if (!['basic','3d'].includes(mode)) throw new Error('Invalid dungeon mode from Estella host.');
+  scene = await createScene($('canvas'), mode);
+  ready=true;$('joinButton').disabled=false;$('joinButton').textContent='Join dungeon';
+  status(`Estella ready · ${mode === 'basic' ? 'Basic' : '3D'} dungeon`);
+  last=performance.now();requestAnimationFrame(frame);
+}
 catch(error){status(`Estella failed: ${error.message}`);console.error(error);}

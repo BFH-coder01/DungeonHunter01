@@ -1,0 +1,51 @@
+{
+  "date": "2026-11-17T22:35:55.269Z",
+  "browser": "157.0.4341.60",
+  "loadMs": 2451,
+  "durationSeconds": 30,
+  "initialPosition": {
+    "x": 43.5,
+    "y": 19.5
+  },
+  "movedPosition": {
+    "x": 53.65,
+    "y": 19.5
+  },
+  "settledDrift": 0,
+  "errors": [],
+  "samples": [
+    {
+      "elapsed": 10019,
+      "snapshots": 371,
+      "wasmBytes": 17301504,
+      "jsHeap": 19736050,
+      "medianFPS": 59.88023952095548,
+      "onePercentLowFPS": 59.171597633131,
+      "meshes": 2816
+    },
+    {
+      "elapsed": 20029,
+      "snapshots": 558,
+      "wasmBytes": 17301504,
+      "jsHeap": 20486020,
+      "medianFPS": 59.88023952095548,
+      "onePercentLowFPS": 59.171597633131,
+      "meshes": 2816
+    },
+    {
+      "elapsed": 30047,
+      "snapshots": 745,
+      "wasmBytes": 17301504,
+      "jsHeap": 23175907,
+      "medianFPS": 59.880239520968516,
+      "onePercentLowFPS": 59.171597633131,
+      "meshes": 2816
+    }
+  ],
+  "results": {
+    "threeClients": true,
+    "actions": true,
+    "reconnect": true,
+    "noPrivilegedMessages": true
+  }
+}

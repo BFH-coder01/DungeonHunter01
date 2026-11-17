@@ -18,11 +18,18 @@ In a second terminal:
 ```powershell
 cd experiments/estella-client
 npm run build
-npm start
+npm start -- --dungeon-mode=3d
 ```
 
 Open **http://localhost:5173** and select **Join dungeon**. Runtime dependencies
 are vendored, so the client build needs no registry access or editor installation.
+For the original block renderer, close the Estella tab, stop this host with
+Ctrl+C, and run `npm start -- --dungeon-mode=basic` before reopening the tab.
+Keep the game server on port 8080 running. Rejoining uses the same renderer.
+The build generates original textured mesh assets in `dist/dungeon-kit/` via
+the pinned Estella mesh encoder. The kit includes a wall, a floor, and both
+stair directions. Its models and textures are defined in
+`scripts/dungeon-kit.mjs`. Basic mode makes no requests for the kit.
 For another computer on the same LAN, use `http://<server-IP>:5173`; the default
 WebSocket address follows that hostname on port 8080. Both server ports must be
 reachable. The join form also accepts a custom `ws://` or `wss://` address.
@@ -69,6 +76,11 @@ node tests/server-compatibility.mjs
 
 `npm ci` installs only the pinned Playwright test tool. Browser tests use installed
 Microsoft Edge in headless mode and expect ports 8080 and 5173 already running.
+The separate `npm run test:dungeon-modes` check requires the game server on 8080
+and port 5173 free. It starts and stops its own Estella host for each mode,
+checks kit loading, reconnects and startup-only mode selection, and verifies
+that game snapshots continue while the Estella host is stopped. It leaves the
+game server running and saves `evidence/dungeon-modes-results.json` and screenshots.
 Set `BROWSER_CHANNEL=chrome` to use installed Chrome for the main browser test.
 The security test briefly starts the existing server on port 8081 in a disposable
 process with fog enabled in memory; no configuration files are changed.
@@ -125,8 +137,9 @@ remaining manual review and the distinction between automated and human tests.
   them before copying local files to `dist/`; no CDN or latest-version fallback.
 - Apache-2.0 `LICENSE`, upstream `NOTICE`, and third-party license texts accompany
   the runtime and are copied into every build. See [THIRD_PARTY.md](THIRD_PARTY.md).
-- All dungeon geometry is generated from the server's player reveal deltas using
-  the runtime's built-in cube. Colors, UI and application code are original to
+- Dungeon geometry follows the server's player reveal deltas. Basic mode uses
+  the runtime's built-in cube; 3D mode uses the locally generated textured kit.
+  Textures, colors, UI and application code are original to
   this experiment. No commercial Dungeon Master art, music or game data is used.
 
 To refresh the same pin for an audit, download the named official release, verify

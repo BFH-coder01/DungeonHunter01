@@ -30,3 +30,20 @@ upstream bytes and notices even where they contain unused API declarations.
 Playwright 1.56.1 is an Apache-2.0 development-only test dependency managed by
 package-lock.json; it is not copied into the game build. Installed Edge/Chrome
 is used for testing and is not redistributed.
+
+## Pixel Fantasy Treasure Chest
+
+Free Game Assets publishes the [Treasure Chest](https://www.freegameassets.com/pixel-fantasy-3d-models/treasure-chest) under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+The local source is `assets/treasure-chest.glb`. The build verifies its SHA-256,
+combines the closed body and lid, converts them to Estella mesh format and extracts
+the embedded base-color PNG. Estella lights the mesh using its vertex normals.
+
+## Pixel Fantasy equipment
+
+Free Game Assets lists each model under CC0 1.0. Local GLBs are hash-verified and scaled around the authored grip for Estella.
+
+- Rusted Dagger: [i-hilt-baselard](https://www.freegameassets.com/pixel-fantasy-3d-models/i-hilt-baselard)
+- Short Sword: [arming-sword](https://www.freegameassets.com/pixel-fantasy-3d-models/arming-sword)
+- War Axe: [high-crescent-battle-axe](https://www.freegameassets.com/pixel-fantasy-3d-models/high-crescent-battle-axe)
+- Spear: [leaf-spear](https://www.freegameassets.com/pixel-fantasy-3d-models/leaf-spear)
+- Maul: [iron-bound-wooden-maul](https://www.freegameassets.com/pixel-fantasy-3d-models/iron-bound-wooden-maul)

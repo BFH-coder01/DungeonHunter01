@@ -1,13 +1,16 @@
 {
-  "date": "2026-11-17T22:34:50.229Z",
+  "date": "2026-11-18T00:06:16.149Z",
   "browser": "157.0.4341.60",
   "errors": [],
   "reports": [
     {
       "mode": "3d",
+      "cacheVisibilityPickupAndReset": true,
       "tiles": 2816,
       "meshes": 2816,
       "kitRequests": [
+        "http://127.0.0.1:5173/dungeon-kit/cache.esmesh",
+        "http://127.0.0.1:5173/dungeon-kit/cache.png",
         "http://127.0.0.1:5173/dungeon-kit/wall.esmesh",
         "http://127.0.0.1:5173/dungeon-kit/wall.png",
         "http://127.0.0.1:5173/dungeon-kit/floor.esmesh",
@@ -21,6 +24,7 @@
     },
     {
       "mode": "basic",
+      "cacheVisibilityPickupAndReset": true,
       "tiles": 2816,
       "meshes": 322,
       "kitRequests": [],

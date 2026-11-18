@@ -49,7 +49,7 @@ works when mouse lock is unavailable over LAN HTTP.
 | Inventory button / 1–8 | Equip weapon or spell |
 | Disconnect | Leave and reset; join again as a fresh player |
 
-Gold boxes are caches and teal boxes are dropped items. Other hunters have original
+In 3D, iron-bound wooden chests mark loot caches. Basic mode shows gold boxes instead. Press E within about one tile to open a cache. Teal boxes are dropped items. Other hunters have original
 hooded avatars with walking, weapon-swing, casting, damage and fallen poses.
 Living hunters have no name or health labels. Their actual held weapon and action
 timing come from optional server display fields; an older server still works but
@@ -93,8 +93,7 @@ server-confirmed kill without disturbing the normal game on port 8080.
 ## Weapons and combat
 
 The first-person hand holds the equipped Rusted Dagger, Short Sword, War Axe,
-Spear or Maul. Models are made from original procedural geometry; no external
-assets are downloaded. The HUD shows the server-provided damage/range and a
+Spear or Maul. 3D mode uses five locally bundled Pixel Fantasy equipment models listed in THIRD_PARTY.md. Basic mode uses procedural weapon geometry. The HUD shows the server-provided damage/range and a
 recovery meter. Heavier weapons animate over their existing longer swing period;
 the spear uses a thrust. Weapon changes lower the hand during the existing swap
 delay. Casting shows a brief spell-colored glow; it does not create a new projectile
@@ -139,7 +138,7 @@ remaining manual review and the distinction between automated and human tests.
   the runtime and are copied into every build. See [THIRD_PARTY.md](THIRD_PARTY.md).
 - Dungeon geometry follows the server's player reveal deltas. Basic mode uses
   the runtime's built-in cube; 3D mode uses the locally generated textured kit.
-  Textures, colors, UI and application code are original to
+  The cache uses the CC0 Pixel Fantasy Treasure Chest (see THIRD_PARTY.md). Terrain textures, UI and application code are original to
   this experiment. No commercial Dungeon Master art, music or game data is used.
 
 To refresh the same pin for an audit, download the named official release, verify

@@ -1,6 +1,6 @@
 {
-  "date": "2026-11-14T00:03:08.555Z",
-  "browser": "157.0.4341.46",
+  "date": "2026-11-18T03:24:59.801Z",
+  "browser": "157.0.4341.60",
   "weapons": [
     "Rusted Dagger",
     "Short Sword",
@@ -15,8 +15,8 @@
   "serverKillConfirmed": true,
   "cleanup": true,
   "performance": {
-    "medianFPS": 59.880239520962,
-    "onePercentLowFPS": 59.17159763314374
+    "medianFPS": 59.88023952095548,
+    "onePercentLowFPS": 59.171597633131
   },
   "errors": []
 }

@@ -13,10 +13,12 @@ export async function createScene(canvas, mode) {
   const mesh=(await app.getResource(Assets).load('mesh','builtin:cube')).handle;
   const shapes={cube:mesh};
   for(const name of ['sphere','cone','capsule','cylinder'])shapes[name]=(await app.getResource(Assets).load('mesh',`builtin:${name}`)).handle;
-  let kit;
+  const importedWeapons = new Map();
+  const gloves = {};
+  let kit, cacheAsset;
   if (mode === '3d') {
     const assets = app.getResource(Assets);
-    const loadTile = async (name, textureName) => {
+    const loadAsset = async (name, textureName) => {
       try {
         const geometry = await assets.load('mesh', `/dungeon-kit/${name}.esmesh`);
         const texture = await assets.loadTexture(`/dungeon-kit/${textureName}.png`);
@@ -26,9 +28,23 @@ export async function createScene(canvas, mode) {
         throw new Error(`3D dungeon kit (${name}, ${textureName}.png): ${error.message}. Run npm run build, then reload.`, {cause: error});
       }
     };
+    const response = await fetch('/dungeon-kit/weapons.json');
+    if (!response.ok) throw new Error('Missing weapon manifest');
+    for (const [weapon, ids] of Object.entries(await response.json())) {
+      const definitions = await Promise.all(ids.map(async id => {
+        const asset = await loadAsset(id, id);
+        return {name:id, p:[0,0,0], s:[100,100,100], c:[1,1,1], asset};
+      }));
+      importedWeapons.set(weapon, definitions);
+    }
+    for (const grip of ['tight','wide']) {
+      gloves[grip] = {name:'glove-'+grip, p:[0,0,0], s:[100,100,100], c:[1,1,1],
+        asset:await loadAsset('glove-'+grip, 'glove')};
+    }
+    cacheAsset = await loadAsset('cache', 'cache');
     kit = [];
     for (const name of ['wall', 'floor', 'stairs-down', 'stairs-up']) {
-      kit.push(await loadTile(name, name === 'wall' ? 'wall' : 'floor'));
+      kit.push(await loadAsset(name, name === 'wall' ? 'wall' : 'floor'));
     }
   }
   const camera=world.spawn('First person camera');
@@ -56,7 +72,18 @@ export async function createScene(canvas, mode) {
     held=[];heldName=null;if(castOrb!==null)world.despawn(castOrb);castOrb=null;
     tiles.clear(); entities.clear(); knownTiles=0;
   }
-  function parts(definitions,layer=0){return definitions.map(part=>({...part,entity:box(part.name,{x:0,y:-100,z:0},{x:1,y:1,z:1},color(...part.c),part.mesh,layer)}));}
+  function weaponModel(name) {
+    return importedWeapons.get(name) ?? weaponParts(name);
+  }
+  function parts(definitions, layer=0) {
+    return definitions.map(part => {
+      if (!part.asset) return {...part, entity:box(part.name,{x:0,y:-100,z:0},{x:1,y:1,z:1},color(...part.c),part.mesh,layer)};
+      const entity = world.spawn(part.name);
+      world.insert(entity, Transform, {position:{x:0,y:-100,z:0}});
+      world.insert(entity, MeshRenderer, {...part.asset, color:color(1,1,1), opaque:true, cullBackfaces:true, lit:layer===0, layer, enabled:true});
+      return {...part, entity};
+    });
+  }
   function pose(parts,anchor,aim,roll=0,scale=1,offset=()=>[0,0,0],flash=0){
     for(const part of parts){
       const d=offset(part),p=part.p.map((v,i)=>v+d[i]);
@@ -66,7 +93,7 @@ export async function createScene(canvas, mode) {
   }
   function destroy(entry){for(const p of [...entry.body??[],...entry.weapon??[]])world.despawn(p.entity);if(entry.entity!==undefined)world.despawn(entry.entity);if(entry.orb!==undefined)world.despawn(entry.orb);}
   function updateHunter(entry,item,x,z,model,now){
-    if(entry.name!==item.weapon?.name){for(const p of entry.weapon??[])world.despawn(p.entity);entry.weapon=parts(weaponParts(item.weapon?.name));entry.name=item.weapon?.name;}
+    if(entry.name!==item.weapon?.name){for(const p of entry.weapon??[])world.despawn(p.entity);entry.weapon=parts(weaponModel(item.weapon?.name));entry.name=item.weapon?.name;}
     const distance=entry.last?Math.hypot(x-entry.last.x,z-entry.last.z):0;
     if(distance<1)entry.stride=(entry.stride??0)+distance*16;
     entry.last={x,z};
@@ -131,6 +158,22 @@ export async function createScene(canvas, mode) {
           const old=model.previous?.others.find(p=>p.id===item.id);
           if (old && old.alive===item.alive && Math.hypot(old.x-x,old.y-z)<2) {x=old.x+(x-old.x)*t;z=old.y+(z-old.y)*t;}
         }
+        if (kind === 'cache' && cacheAsset) {
+          let chest = entities.get(key);
+          if (!chest) {
+            chest = {entity:world.spawn(key)};
+            world.insert(chest.entity, MeshRenderer, {
+              ...cacheAsset, color:color(1,1,1), opaque:true, cullBackfaces:true, lit:true, enabled:true,
+            });
+            entities.set(key, chest);
+          }
+          if (chest.x !== x || chest.z !== z) {
+            world.insert(chest.entity, Transform, {position:{x,y:0,z}});
+            chest.x = x;
+            chest.z = z;
+          }
+          continue;
+        }
         if (!entities.has(key)) entities.set(key,hunter?{body:parts(hunterParts()),weapon:[],orb:box('spell glow',{x:0,y:-100,z:0},{x:.1,y:.1,z:.1},color(.5,.5,1),'sphere')}:{entity:box(kind,{x,y:height/2,z},{x:.26,y:height,z:.26},kind==='cache'?color(.73,.52,.2):color(.3,.7,.7))});
         const entry=entities.get(key);
         if(hunter)updateHunter(entry,item,x,z,model,now);
@@ -141,7 +184,13 @@ export async function createScene(canvas, mode) {
   }
   function viewWeapon(position,aim,combat,now){
     const name=combat.alive?combat.weapon?.name:null;
-    if(name!==heldName){for(const p of held)world.despawn(p.entity);held=parts(name?[...weaponParts(name),{name:'gloved hand',p:[0,-.02,0],s:[.09,.1,.1],c:[.26,.15,.09],mesh:'sphere'}]:[],1);heldName=name;}
+    if (name !== heldName) {
+      for (const part of held) world.despawn(part.entity);
+      const grip = name === 'Rusted Dagger' || name === 'Short Sword' ? 'tight' : 'wide';
+      const hand = gloves[grip] ?? {name:'gloved hand',p:[0,-.02,0],s:[.09,.1,.1],c:[.26,.15,.09],mesh:'sphere'};
+      held = name ? parts([...weaponModel(name), hand], 1) : [];
+      heldName = name;
+    }
     const swing=combat.attack===null?{roll:-.2,forward:0,side:0,lift:0}:attackPose(combat.attack,name);
     const lower=combat.swapRemaining>0?.2:0;
     const anchor=transformPart([.16+swing.side,-.20-lower+swing.lift,.45+swing.forward],toWorld(position.x,position.y,.62),aim);
@@ -156,5 +205,5 @@ export async function createScene(canvas, mode) {
     world.insert(lamp,Transform,{position:toWorld(position.x,position.y,.95)});
   }
   addEventListener('resize',()=>{canvas.width=innerWidth;canvas.height=innerHeight;Renderer.resize(canvas.width,canvas.height);});
-  return {app,module,clear,updateMap,updateEntities,look,viewWeapon,counts:()=>({mode,tiles:knownTiles,meshes:[...tiles.values()].reduce((n,row)=>n+row.length,0),entities:entities.size,avatars:[...entities.keys()].filter(k=>k.startsWith('hunter:')).length,heldWeapon:heldName})};
+  return {app,module,clear,updateMap,updateEntities,look,viewWeapon,counts:()=>({mode,tiles:knownTiles,meshes:[...tiles.values()].reduce((n,row)=>n+row.length,0),entities:entities.size,cacheIds:[...entities.keys()].filter(k=>k.startsWith('cache:')).map(k=>k.slice(6)),avatars:[...entities.keys()].filter(k=>k.startsWith('hunter:')).length,heldWeapon:heldName})};
 }

@@ -12,7 +12,7 @@ for(let y=3;y<level.height-3&&!center;y++)for(let x=3;x<level.width-5;x++){
 if(!center)throw new Error('Fixture requires a room');
 const target=game.addPlayer('target','Training Hunter');target.x=center.x+2;target.y=center.y;target.aim=Math.PI;
 target.inventory=[makeWeapon('war_axe')];target.equippedWeaponUid=target.inventory[0].uid;
-const wss=new WebSocketServer({port:8081,host:'127.0.0.1'});let seq=0;
+const wss=new WebSocketServer({port:Number(process.env.COMBAT_FIXTURE_PORT ?? 8081),host:'127.0.0.1'});let seq=0;
 wss.on('connection',ws=>{
   let player;
   ws.on('message',raw=>{
@@ -33,4 +33,4 @@ let last=Date.now();setInterval(()=>{
   if(now>target.swingUntil+600)game.handleAction(target,{action:'attack'},now);
   for(const ws of wss.clients)if(ws.player&&ws.readyState===1)ws.send(JSON.stringify({type:'state',...game.snapshotFor(ws.player)}));
 },50);
-wss.on('listening',()=>console.log('Combat fixture ready on 8081'));
+wss.on('listening',()=>console.log('Combat fixture ready on '+wss.address().port));

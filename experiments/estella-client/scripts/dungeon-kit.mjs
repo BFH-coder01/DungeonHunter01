@@ -1,3 +1,6 @@
+import {buildGloves} from './glove.mjs';
+import {buildWeapons} from './import-weapons.mjs';
+import { importChest } from './import-chest.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
 import { o as encodeMesh, i as decodeMesh } from '../vendor/estella/sdk/shared/meshFormat.js';
@@ -32,6 +35,10 @@ function mesh(boxes) {
       indices.push(start,start+1,start+2,start,start+2,start+3);
     }
   }
+  return encode(vertices, indices, min, max);
+}
+
+function encode(vertices, indices, min, max) {
   const encoded = encodeMesh({
     channels, indices: Uint32Array.from(indices), vertices: new Uint8Array(Float32Array.from(vertices).buffer),
     vertexStride: 32, vertexCount: vertices.length / 8, aabbMin: min, aabbMax: max,
@@ -66,6 +73,10 @@ function stoneTexture(wall) {
     const offset = y * stride + 1 + x * 3;
     pixels.set([shade + (wall ? 5 : 12), shade + 3, shade + (wall ? 6 : -6)], offset);
   }
+  return png(size, pixels);
+}
+
+function png(size, pixels) {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(size); header.writeUInt32BE(size, 4); header[8] = 8; header[9] = 2;
   return Buffer.concat([
@@ -87,9 +98,14 @@ export async function buildDungeonKit(directory) {
     'stairs-down': stairs(false),
     'stairs-up': stairs(true),
   };
+  const chest = await importChest();
   await mkdir(directory, { recursive: true });
   await Promise.all([
+    buildWeapons(directory, encode),
+    buildGloves(directory, encode, png),
     ...Object.entries(models).map(([name, boxes]) => writeFile(`${directory}/${name}.esmesh`, mesh(boxes))),
+    writeFile(`${directory}/cache.esmesh`, encode(chest.vertices, chest.indices, chest.min, chest.max)),
+    writeFile(`${directory}/cache.png`, chest.png),
     writeFile(`${directory}/wall.png`, stoneTexture(true)),
     writeFile(`${directory}/floor.png`, stoneTexture(false)),
   ]);

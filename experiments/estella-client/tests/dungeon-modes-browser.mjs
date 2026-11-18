@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {mkdir, writeFile} from 'node:fs/promises';
+import {checkCache} from './cache-fixture.mjs';
 import {chromium} from 'playwright';
 
 // Own only the Estella host created here. Never stop or restart the game server.
@@ -46,8 +47,10 @@ try {
     await page.waitForFunction(() => !document.getElementById('joinButton').disabled);
     assert.equal(await page.evaluate(() => window.estellaDiagnostics().mode), mode);
     assert.deepEqual(await (await fetch(`${origin}/startup.json?mode=other`)).json(), {mode});
+    await checkCache(page, mode);
+    await page.locator('#server').fill('ws://127.0.0.1:8080');
     await page.locator('#joinButton').click();
-    await page.waitForFunction(() => window.estellaDiagnostics().snapshots > 10);
+    await page.waitForFunction(() => window.estellaDiagnostics().connected && window.estellaDiagnostics().tiles > 0 && window.estellaDiagnostics().snapshots > 10);
     const initial = await page.evaluate(() => window.estellaDiagnostics());
     assert.ok(initial.tiles > 0 && initial.meshes > 0);
     await page.keyboard.down('ArrowRight');
@@ -55,21 +58,21 @@ try {
     await page.keyboard.up('ArrowRight');
     await page.screenshot({path:`evidence/dungeon-${mode}.png`});
     if(mode === '3d') {
-      for(const asset of ['wall.esmesh','floor.esmesh','stairs-down.esmesh','stairs-up.esmesh','wall.png','floor.png']) {
+      for(const asset of ['wall.esmesh','floor.esmesh','stairs-down.esmesh','stairs-up.esmesh','wall.png','floor.png','cache.esmesh','cache.png']) {
         assert.ok(kitRequests.some(url => url.endsWith(`/${asset}`)), `Loaded ${asset}`);
       }
     } else assert.deepEqual(kitRequests, []);
     await page.locator('#leave').click();
     assert.equal(await page.evaluate(() => window.estellaDiagnostics().tiles), 0);
     await page.locator('#joinButton').click();
-    await page.waitForFunction(() => window.estellaDiagnostics().snapshots > 5);
+    await page.waitForFunction(() => window.estellaDiagnostics().connected && window.estellaDiagnostics().snapshots > 5);
     assert.equal(await page.evaluate(() => window.estellaDiagnostics().mode), mode);
     // Stopping the renderer host must not stop the authoritative WebSocket game.
     await stopHost();
     const before = await page.evaluate(() => window.estellaDiagnostics().snapshots);
     await page.waitForFunction(n => window.estellaDiagnostics().snapshots > n + 5, before);
     assert.deepEqual(failures, []);
-    reports.push({mode, tiles:initial.tiles, meshes:initial.meshes, kitRequests, reconnect:true, queryCannotSwitchMode:true, gameContinuesWhileHostStopped:true});
+    reports.push({mode, cacheVisibilityPickupAndReset:true, tiles:initial.tiles, meshes:initial.meshes, kitRequests, reconnect:true, queryCannotSwitchMode:true, gameContinuesWhileHostStopped:true});
     await page.close();
   }
   assert.deepEqual(errors, []);

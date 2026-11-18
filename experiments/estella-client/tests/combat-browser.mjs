@@ -3,9 +3,10 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
-const fixture=spawn(process.execPath,['tests/combat-fixture-server.mjs'],{stdio:['ignore','pipe','pipe']});
+const fixture=spawn(process.execPath,['tests/combat-fixture-server.mjs'],{stdio:['ignore','pipe','pipe'],env:{...process.env,COMBAT_FIXTURE_PORT:'0'}});
 fixture.stderr.on('data',data=>process.stderr.write(data));
-await Promise.race([once(fixture.stdout,'data'),once(fixture,'exit').then(([code])=>{throw new Error(`Fixture exited: ${code}`);})]);
+const [ready]=await Promise.race([once(fixture.stdout,'data'),once(fixture,'exit').then(([code])=>{throw new Error(`Fixture exited: ${code}`);})]);
+const port = Number(String(ready).trim().split(' ').at(-1));
 const browser=await chromium.launch({channel:'msedge',headless:true});
 const errors=[],sent=[],states=[];
 try{
@@ -13,7 +14,7 @@ try{
   p.on('pageerror',e=>errors.push(e.message));
   p.on('websocket',s=>{s.on('framesent',f=>sent.push(JSON.parse(f.payload)));s.on('framereceived',f=>{const m=JSON.parse(f.payload);if(m.type==='state')states.push(m);});});
   await p.goto('http://127.0.0.1:5173');await p.waitForFunction(()=>!document.getElementById('joinButton').disabled);
-  await p.locator('#server').fill('ws://127.0.0.1:8081');await p.locator('#joinButton').click();
+  await p.locator('#server').fill(`ws://127.0.0.1:${port}`);await p.locator('#joinButton').click();
   await p.waitForFunction(()=>window.estellaDiagnostics().snapshots>25);
   assert.equal(await p.evaluate(()=>window.estellaDiagnostics().avatars),1);
   assert.equal(await p.evaluate(()=>window.estellaDiagnostics().heldWeapon),'Rusted Dagger');

@@ -1,0 +1,43 @@
+{
+  "date": "2026-11-18T22:26:35.089Z",
+  "browser": "157.0.4341.60",
+  "errors": [],
+  "reports": [
+    {
+      "mode": "3d",
+      "landmarks": 7,
+      "portalMeshes": 224,
+      "knownTiles": 85,
+      "colors": [
+        "green",
+        "blue",
+        "yellow"
+      ],
+      "entrantOnly": true,
+      "arrivalLock": true,
+      "aimPreserved": true,
+      "twoPlayerGathering": true,
+      "inwardAim": true,
+      "cooldown": true,
+      "reconnect": true
+    },
+    {
+      "mode": "basic",
+      "landmarks": 7,
+      "portalMeshes": 224,
+      "knownTiles": 85,
+      "colors": [
+        "green",
+        "blue",
+        "yellow"
+      ],
+      "entrantOnly": true,
+      "arrivalLock": true,
+      "aimPreserved": true,
+      "twoPlayerGathering": true,
+      "inwardAim": true,
+      "cooldown": true,
+      "reconnect": true
+    }
+  ]
+}

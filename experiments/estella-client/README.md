@@ -3,6 +3,8 @@
 A separate first-person client for the existing DungeonHunter WebSocket server.
 The original game at port 8080 and its Dungeon Master view are unchanged.
 
+For the portal-enabled preview, see [installation and start/stop instructions](PORTALS.md).
+
 ## Try it on Windows
 
 Requires Node.js 20+ and a desktop browser with WebGL2 and WebAssembly.

@@ -28,6 +28,8 @@ export class Combat {
       this.castEnd=now+self.castRemaining;
       if(self.castRemaining>0)this.castStart=this.castEnd-(equippedSpell(self)?.cooldownMs??450);
     }
+    if(self.castVisualSuppressed)this.castStart=-Infinity;
+    if(old && (old.teleportSequence??0)!==(self.teleportSequence??0)){this.attackStart=-Infinity;this.castStart=-Infinity;this.hurtUntil=0;}
   }
   message(text,now){this.notice=text;this.noticeUntil=now+1800;}
   remaining(field,now){return Math.max(0,(this.self?.[field]??0)-(now-this.received));}

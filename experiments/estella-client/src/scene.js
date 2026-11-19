@@ -3,6 +3,7 @@ import {createWebApp, Assets, Transform, Camera, ProjectionType, MeshRenderer, L
 import {toWorld,cameraRotation} from './model.js';
 import {hunterParts,weaponParts,spellColor,transformPart,partRotation} from './figures.js';
 import {attackPose,clamp} from './combat.js';
+import {landmarks,portalColors} from './portals.js';
 const color = (r,g,b) => ({r,g,b,a:1});
 export async function createScene(canvas, mode) {
   canvas.width=innerWidth; canvas.height=innerHeight;
@@ -56,7 +57,7 @@ export async function createScene(canvas, mode) {
   const sun=world.spawn('Soft dungeon fill');
   world.insert(sun,Transform,{rotation:{x:-.4,y:.2,z:0,w:.8944}});
   world.insert(sun,Light,{type:LightType.Directional,color:color(.55,.65,.8),intensity:.5,enabled:true});
-  const tiles=new Map(), entities=new Map();
+  const tiles=new Map(), entities=new Map(), portals=new Map();
   let held=[],heldName=null,castOrb=null;
   let knownTiles=0;
   function box(name,position,scale,tint,shape='cube',layer=0) {
@@ -70,6 +71,7 @@ export async function createScene(canvas, mode) {
     for(const entry of entities.values())destroy(entry);
     for(const part of held)world.despawn(part.entity);
     held=[];heldName=null;if(castOrb!==null)world.despawn(castOrb);castOrb=null;
+    for(const ring of portals.values())for(const e of ring)world.despawn(e);portals.clear();
     tiles.clear(); entities.clear(); knownTiles=0;
   }
   function weaponModel(name) {
@@ -146,6 +148,20 @@ export async function createScene(canvas, mode) {
   }
   function updateEntities(model,now) {
     if (!model.current) return;
+    const portalWanted=new Set();
+    for(const p of landmarks(model.current)){
+      portalWanted.add(p.id);
+      if(!portals.has(p.id))portals.set(p.id,Array.from({length:32},(_,i)=>box(`Portal ${p.color??'red'} ${i}`,toWorld(p.x,p.y,.7),{x:.07,y:.07,z:.07},color(...portalColors[p.color??'red']),'sphere',1)));
+      const ring=portals.get(p.id),rgb=portalColors[p.color??'red'];
+      const active=p.active!==false,phase=now*.001*(active?1:.35);
+      for(let i=0;i<ring.length;i++){
+        const a=i/16*Math.PI*2+phase*(i<16?1:-1),radius=i<16?.48:.34;
+        const px=p.x+(i<16?Math.cos(a)*radius:0),py=p.y+(i>=16?Math.cos(a)*radius:0),height=.65+Math.sin(a)*radius;
+        world.insert(ring[i],Transform,{position:toWorld(px,py,height),scale:{x:.00065,y:.00065,z:.00065}});
+        world.set(ring[i],MeshRenderer,{...world.get(ring[i],MeshRenderer),color:color(...rgb.map(v=>v*(active?1:.35)))});
+      }
+    }
+    for(const [id,ring] of portals)if(!portalWanted.has(id)){for(const e of ring)world.despawn(e);portals.delete(id);}
     const wanted=new Set();
     const t=Math.max(0,Math.min(1,(now-model.received)/50));
     for (const [kind,items] of [['hunter',model.current.others],['cache',model.current.caches],['drop',model.current.drops]]) {
@@ -156,7 +172,7 @@ export async function createScene(canvas, mode) {
         let x=item.x,z=item.y;
         if (hunter) {
           const old=model.previous?.others.find(p=>p.id===item.id);
-          if (old && old.alive===item.alive && Math.hypot(old.x-x,old.y-z)<2) {x=old.x+(x-old.x)*t;z=old.y+(z-old.y)*t;}
+          if (old && (old.teleportSequence??0)===(item.teleportSequence??0) && old.alive===item.alive && Math.hypot(old.x-x,old.y-z)<2) {x=old.x+(x-old.x)*t;z=old.y+(z-old.y)*t;}
         }
         if (kind === 'cache' && cacheAsset) {
           let chest = entities.get(key);
@@ -205,5 +221,5 @@ export async function createScene(canvas, mode) {
     world.insert(lamp,Transform,{position:toWorld(position.x,position.y,.95)});
   }
   addEventListener('resize',()=>{canvas.width=innerWidth;canvas.height=innerHeight;Renderer.resize(canvas.width,canvas.height);});
-  return {app,module,clear,updateMap,updateEntities,look,viewWeapon,counts:()=>({mode,tiles:knownTiles,meshes:[...tiles.values()].reduce((n,row)=>n+row.length,0),entities:entities.size,cacheIds:[...entities.keys()].filter(k=>k.startsWith('cache:')).map(k=>k.slice(6)),avatars:[...entities.keys()].filter(k=>k.startsWith('hunter:')).length,heldWeapon:heldName})};
+  return {app,module,clear,updateMap,updateEntities,look,viewWeapon,counts:()=>({mode,portalCount:portals.size,portalMeshes:[...portals.values()].reduce((n,r)=>n+r.length,0),tiles:knownTiles,meshes:[...tiles.values()].reduce((n,row)=>n+row.length,0),entities:entities.size,cacheIds:[...entities.keys()].filter(k=>k.startsWith('cache:')).map(k=>k.slice(6)),avatars:[...entities.keys()].filter(k=>k.startsWith('hunter:')).length,heldWeapon:heldName})};
 }

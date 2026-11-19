@@ -1,5 +1,7 @@
 # DungeonHunter01
 
+The Estella portal preview has [Windows installation, start/stop, and play-test instructions](experiments/estella-client/PORTALS.md).
+
 Browser-based, procedurally generated dungeon crawler for play over the home
 wifi. One machine runs the server; everyone else joins from a browser on the
 same network. No installs, no accounts — just a URL.

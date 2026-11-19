@@ -7,6 +7,7 @@ import { makeRng, randomSeed } from '../shared/rng.js';
 import { makeWeapon, makeSpell } from '../shared/items.js';
 import { AMBIENT_MAX_DIST } from '../shared/sounds.js';
 import { generateDungeon, tileAt } from './dungeon.js';
+import {placePortals, portalAt, checkPortals, teleportState} from './portals.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -15,6 +16,7 @@ export class Game {
     this.seed = seed;
     this.rng = makeRng(seed);
     const { levels, totalLevels } = generateDungeon(this.rng);
+    placePortals(levels, seed);
     this.levels = levels;
     this.totalLevels = totalLevels;
     this.players = new Map();
@@ -102,6 +104,7 @@ export class Game {
     player.alive = true;
     player.respawnAt = 0;
     player.move = { x: 0, y: 0 };
+    player.portalContact = portalAt(this.levels[player.level], player)?.id ?? null;
     if (CONFIG.revealAll) this.revealEntireLevel(player);
     this.updateVision(player);
   }
@@ -399,6 +402,8 @@ export class Game {
       // Vision is the expensive part; 5Hz is plenty for map reveal.
       if (!CONFIG.revealAll && this.tickCount % 4 === 0) this.updateVision(player);
     }
+    // Move everyone first; a gathering then clears every queued motion equally.
+    for (const player of this.players.values()) checkPortals(this, player, now);
   }
 
   // --- snapshots --------------------------------------------------------
@@ -426,6 +431,7 @@ export class Game {
       if (other === player || other.level !== player.level) continue;
       if (!this.canSee(player, other.x, other.y)) continue;
       others.push({
+        ...teleportState(other),
         id: other.id,
         name: other.name,
         x: round2(other.x),
@@ -436,7 +442,7 @@ export class Game {
         // Presentation only, disclosed under the same visibility check as the avatar.
         weapon: weaponAppearance(this.findItem(other, other.equippedWeaponUid)),
         swingRemaining: Math.max(0, other.swingUntil - now),
-        cast: castAppearance(this.findItem(other, other.equippedSpellUid), other.castReadyAt - now),
+        cast: other.castReadyAt > (other.castVisualAfter ?? 0) ? castAppearance(this.findItem(other, other.equippedSpellUid), other.castReadyAt - now) : null,
       });
     }
 
@@ -458,6 +464,8 @@ export class Game {
     const snapshot = {
       t: now,
       self: {
+        ...teleportState(player),
+        castVisualSuppressed: player.castReadyAt <= (player.castVisualAfter ?? 0),
         x: round2(player.x),
         y: round2(player.y),
         aim: round2(player.aim),
@@ -483,12 +491,21 @@ export class Game {
       caches,
       drops,
       soundPoints,
+      ...this.portalSnapshot(level, now),
       // flat [tileIndex, tileValue, ...] of everything revealed since last frame
       reveal: player.newlyExplored,
       events: this.drainEvents(player.id).map(({ to, ...rest }) => rest),
     };
     player.newlyExplored = [];
     return snapshot;
+  }
+
+  portalSnapshot(level, now) {
+    const red=level.battlePortal;
+    return {
+      battlePortal: red ? {id:red.id,color:'red',x:red.x,y:red.y,active:now>=red.cooldownUntil,cooldownRemaining:Math.max(0,red.cooldownUntil-now),capacity:level.battleSpawns.length} : null,
+      linkPortals: (level.linkPortals??[]).map(({id,pairId,color,x,y})=>({id,pairId,color,x,y})),
+    };
   }
 
   // --- DungeonMaster / spectator ----------------------------------------
@@ -536,7 +553,7 @@ export class Game {
       uid: d.uid, x: round2(d.x), y: round2(d.y), name: d.item.name, kind: d.item.kind,
     }));
 
-    return { t: Date.now(), level: levelIndex, players, caches, drops };
+    return { t: Date.now(), level: levelIndex, players, caches, drops, ...this.portalSnapshot(level, Date.now()) };
   }
 }
 

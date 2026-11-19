@@ -14,7 +14,7 @@ const channels = [
 function mesh(boxes) {
   const vertices = [], indices = [];
   const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
-  for (const [[x,y,z],[X,Y,Z]] of boxes) {
+  for (const [[x,y,z],[X,Y,Z], surface] of boxes) {
     const faces = [
       [[0,0,-1],[[X,y,z],[x,y,z],[x,Y,z],[X,Y,z]]],
       [[0,0,1],[[x,y,Z],[X,y,Z],[X,Y,Z],[x,Y,Z]]],
@@ -30,6 +30,11 @@ function mesh(boxes) {
         const [px,py,pz] = point;
         // Use tile coordinates so adjacent stair blocks share the texture grid.
         const uv = normal[1] ? [px + .5, pz + .5] : [normal[0] ? pz + .5 : px + .5, py >= 0 ? py / 1.7 : -py];
+        // Floor/stair meshes share one atlas with the ceiling stone and oak ribs.
+        if (surface !== undefined) {
+          const v = normal[1] ? pz + .5 : (py-y)/(Y-y);
+          uv[1] = (surface + .005 + .99 * v) / 3;
+        }
         vertices.push(...point, ...uv, ...normal);
       }
       indices.push(start,start+1,start+2,start,start+2,start+3);
@@ -61,24 +66,62 @@ function chunk(name, data) {
   return result;
 }
 
-function stoneTexture(wall) {
-  const size = 128, stride = size * 3 + 1;
-  const pixels = Buffer.alloc(stride * size);
-  let seed = 3479;
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const row = Math.floor(y / 32), col = Math.floor((x + row % 2 * 32) / 64);
-    const edge = Math.min((x + row % 2 * 32) % 64, y % 32);
-    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-    const shade = edge < 2 ? 48 : 91 + (row * 13 + col * 7) % 22 + (seed >>> 28) + (edge === 2 ? 18 : 0);
-    const offset = y * stride + 1 + x * 3;
-    pixels.set([shade + (wall ? 5 : 12), shade + 3, shade + (wall ? 6 : -6)], offset);
-  }
-  return png(size, pixels);
+// Periodic noise keeps opposite edges of each tile continuous.
+function hash(x,y) {
+  let n = Math.imul(x+71,374761393) + Math.imul(y+37,668265263);
+  n = Math.imul(n ^ (n >>> 13), 1274126177);
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+}
+function noise(u,v,count) {
+  const x=u*count, y=v*count, i=Math.floor(x), j=Math.floor(y);
+  const wrap=n=>((n%count)+count)%count;
+  const h=(a,b)=>hash(wrap(a),wrap(b));
+  const smooth=t=>t*t*(3-2*t);
+  const mix=(a,b,t)=>a+(b-a)*t;
+  return mix(mix(h(i,j),h(i+1,j),smooth(x-i)),mix(h(i,j+1),h(i+1,j+1),smooth(x-i)),smooth(y-j));
 }
 
-function png(size, pixels) {
+function masonry(u,v,wall) {
+  const cloud=noise(u,v,5), fleck=noise(u,v,47);
+  const warp=(noise(u,v,13)-.5)*.018;
+  const courses=wall?6:2, columns=2;
+  const y=(v+warp)*courses, row=Math.floor(y), fy=y-row;
+  const x=(u+warp*.6)*columns + (row%2===0?0:.53);
+  const col=Math.floor(x), fx=x-col;
+  const face=hash((col+columns)%columns,(row+courses)%courses);
+  const dx=Math.min(fx,1-fx)/columns, dy=Math.min(fy,1-fy)/courses;
+  const joint=Math.min(dx,dy) - .32*Math.max(0,.026-Math.max(dx,dy));
+  const relief=Math.max(0,Math.min(1,(joint-.003)/.014));
+  const rim=joint<.019 && (fy>.5 || fx<.5) ? 13*(1-relief) : 0;
+  const shade=(wall?75:80) + 29*face + 29*(cloud-.5) + 20*(fleck-.5) +
+    11*(noise(u,v,112)-.5);
+  const stone=34+(shade-34)*relief+rim;
+  const damp=wall?Math.max(0,.23-v)*55:0;
+  return [stone+(wall?1:-2)-damp,stone+4-damp*.58,stone+7-damp];
+}
+
+function stoneTexture(wall) {
+  const width=256, height=wall?width:width*3, stride=width*3+1;
+  const pixels=Buffer.alloc(stride*height);
+  for(let y=0;y<height;y++) for(let x=0;x<width;x++) {
+    const u=x/width, v=1-(y%width)/width;
+    const surface=wall?0:2-Math.floor(y/width);
+    let rgb;
+    if(surface===2) {
+      const grain=noise(u,v*.15,42)*22+6*Math.sin(u*190+3*Math.sin(v*12));
+      rgb=[59+grain,43+grain*.8,32+grain*.6];
+    } else {
+      rgb=masonry(u,v,wall);
+      if(surface===1) rgb=rgb.map(c=>c*.69);
+    }
+    pixels.set(rgb.map(Math.round), y*stride+1+x*3);
+  }
+  return png(width,pixels,height);
+}
+
+function png(size, pixels, height=size) {
   const header = Buffer.alloc(13);
-  header.writeUInt32BE(size); header.writeUInt32BE(size, 4); header[8] = 8; header[9] = 2;
+  header.writeUInt32BE(size); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = 2;
   return Buffer.concat([
     Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', header),
     chunk('IDAT', deflateSync(pixels)), chunk('IEND', Buffer.alloc(0)),
@@ -86,17 +129,19 @@ function png(size, pixels) {
 }
 
 export async function buildDungeonKit(directory) {
-  const floor = [[-.5,-.12,-.5],[.5,0,.5]];
+  const floor = [[-.5,-.12,-.5],[.5,0,.5],0];
+  const ceiling = [[-.5,1.7,-.5],[.5,1.82,.5],1];
+  const joist = [[-.055,1.61,-.5],[.055,1.7,.5],2];
   const stairs = rise => Array.from({length: 5}, (_, i) => {
     const step = rise ? i : 4 - i;
     const y = (step - 4) * .055;
-    return [[-.5,-.34,-.5 + i / 5],[.5,y,-.5 + (i + 1) / 5]];
+    return [[-.5,-.34,-.5 + i / 5],[.5,y,-.5 + (i + 1) / 5],0];
   });
   const models = {
     wall: [[[-.5,0,-.5],[.5,1.7,.5]]],
-    floor: [floor],
-    'stairs-down': stairs(false),
-    'stairs-up': stairs(true),
+    floor: [floor,ceiling,joist],
+    'stairs-down': [...stairs(false),ceiling,joist],
+    'stairs-up': [...stairs(true),ceiling,joist],
   };
   const chest = await importChest();
   await mkdir(directory, { recursive: true });

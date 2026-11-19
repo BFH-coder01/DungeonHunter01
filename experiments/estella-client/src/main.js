@@ -1,20 +1,22 @@
 import {Model,movement} from './model.js';
 import {createScene} from './scene.js';
 import {Combat} from './combat.js';
+import {reconcileTravel,drawPortalLocator} from './portals.js';
 const $=id=>document.getElementById(id);
 const model=new Model(), combat=new Combat(),keys=new Set(), frames=[];
 let scene, socket, aim=0, last=performance.now(), lastInput=0, lastMetrics=0, connectedAt=0, snapshots=0, ready=false, inventoryKey='', connectionTimer;
-const serverURL=new URL(location.href); serverURL.port='8080'; serverURL.protocol=location.protocol==='https:'?'wss:':'ws:'; serverURL.pathname='/'; serverURL.search='';
+const serverURL=new URL(location.href); serverURL.port=location.port==='5174'?'8082':'8080'; serverURL.protocol=location.protocol==='https:'?'wss:':'ws:'; serverURL.pathname='/'; serverURL.search='';
 $('server').value=serverURL.href;
 function links() {try { const u=new URL($('server').value);u.protocol=u.protocol==='wss:'?'https:':'http:';$('legacy').href=u.origin+'/';$('dm').href=u.origin+'/dm.html'; } catch {} }
 links(); $('server').addEventListener('change',links);
+if(location.port==='5174'){$('legacy').hidden=true;$('dm').hidden=true;}
 function status(text) {$('status').textContent=text;}
 function send(message) {if(socket?.readyState===WebSocket.OPEN) socket.send(JSON.stringify(message));}
 function stopInput() {keys.clear();if(model.you)send(movement(keys,aim));}
 function disconnect() {
   clearTimeout(connectionTimer);inventoryKey='';
   stopInput(); const old=socket; socket=null; old?.close(); model.reset();combat.reset();scene?.clear();
-  $('combat').hidden=true;$('hurt').style.opacity=0;
+  $('combat').hidden=true;$('hurt').style.opacity=0;drawPortalLocator($('portalOverlay'),null,null,aim);
   $('join').hidden=false;$('hud').hidden=true;$('crosshair').hidden=true;$('joinButton').disabled=!ready;
   if(document.pointerLockElement)document.exitPointerLock();
 }
@@ -33,6 +35,8 @@ $('connect').onsubmit=event=>{
       if(result==='state'){
         clearTimeout(connectionTimer);
         if(!snapshots)aim=model.current.self.aim;
+        const travel=reconcileTravel(model.previous?.self,model.current.self,aim);aim=travel.aim;
+        if(travel.travelled){keys.clear();send(movement(keys,aim));}
         snapshots++;combat.accept(model.current.self,performance.now());scene.updateMap(model);updateHUD();$('combat').hidden=false;
       }
     }catch(error){disconnect();status(`Protocol error: ${error.message}. Rejoin to reset.`);}
@@ -60,7 +64,7 @@ function updateHUD() {
       button.onclick=()=>action('equip',{uid:item.uid});inv.append(button);
     }
   }
-  if(model.current.events?.length)$('events').textContent=model.current.events.map(e=>e.text??e.message??`${e.kind}${e.name?`: ${e.name}`:''}${typeof e.hit==='boolean'?(e.hit?' — hit':' — no target'):''}`).join(' · ');
+  if(model.current.events?.length)$('events').textContent=model.current.events.map(e=>e.kind==='portalFull'?`Arena full: supports ${e.capacity} living hunters. Leave and re-enter when space is available.`:e.text??e.message??`${e.kind}${e.name?`: ${e.name}`:''}${typeof e.hit==='boolean'?(e.hit?' — hit':' — no target'):''}`).join(' · ');
 }
 addEventListener('keydown',e=>{
   if(!model.you||e.target instanceof HTMLInputElement)return;
@@ -81,14 +85,14 @@ $('canvas').addEventListener('contextmenu',e=>e.preventDefault());
 document.addEventListener('pointerlockchange',stopInput);
 addEventListener('mousemove',e=>{if(document.pointerLockElement=== $('canvas'))aim+=e.movementX*.0025;});
 // Read-only diagnostics for repeatable acceptance capture; no state/position setter.
-window.estellaDiagnostics=()=>({connected:!!model.you,snapshots,position:model.position(performance.now()),self:model.current?.self,combat:combat.frame(performance.now()),knownTiles:model.tiles.reduce((n,t)=>n+(t>=0),0),...scene?.counts(),wasmBytes:scene?.module.HEAPU8.byteLength,frames:[...frames]});
+window.estellaDiagnostics=()=>({connected:!!model.you,snapshots,aim,portals:[model.current?.battlePortal,...model.current?.linkPortals??[]].filter(Boolean),position:model.position(performance.now()),self:model.current?.self,combat:combat.frame(performance.now()),knownTiles:model.tiles.reduce((n,t)=>n+(t>=0),0),...scene?.counts(),wasmBytes:scene?.module.HEAPU8.byteLength,frames:[...frames]});
 async function frame(now) {
   const frameMs=now-last,dt=Math.min(.1,frameMs/1000);last=now;
   if(model.you) {
     aim+=(Number(keys.has('ArrowRight'))-Number(keys.has('ArrowLeft')))*dt*1.8;
     if(now-lastInput>=50){send(movement(keys,aim));lastInput=now;}
     const feedback=combat.frame(now);
-    const position=model.position(now);if(position){scene.look(position,aim);scene.updateEntities(model,now);scene.viewWeapon(position,aim,feedback,now);}
+    const position=model.position(now);drawPortalLocator($('portalOverlay'),model.current,position,aim,now-model.received);if(position){scene.look(position,aim);scene.updateEntities(model,now);scene.viewWeapon(position,aim,feedback,now);}
     $('weaponName').textContent=feedback.weapon?.name??'Unarmed';
     $('weaponStats').textContent=feedback.weapon?`${feedback.weapon.damage} damage · ${feedback.weapon.range} tile reach`:'';
     $('attack').disabled=!feedback.alive||!feedback.weapon||feedback.attackRemaining>0||feedback.swapRemaining>0;

@@ -162,3 +162,5 @@ All code and dependencies live here. The development host only serves `dist/`
 on port 5173; it does not proxy or change the server protocol. Stop it to roll
 back. Continue playing at http://localhost:8080/ or observing at
 http://localhost:8080/dm.html. No merge to `main` is part of this POC.
+
+Network defaults and environment overrides are documented in [network configuration](../../config/README.md).

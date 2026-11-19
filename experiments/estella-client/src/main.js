@@ -2,14 +2,12 @@ import {Model,movement} from './model.js';
 import {createScene} from './scene.js';
 import {Combat} from './combat.js';
 import {reconcileTravel,drawPortalLocator} from './portals.js';
+import {gameConnection} from './connection.js';
 const $=id=>document.getElementById(id);
 const model=new Model(), combat=new Combat(),keys=new Set(), frames=[];
 let scene, socket, aim=0, last=performance.now(), lastInput=0, lastMetrics=0, connectedAt=0, snapshots=0, ready=false, inventoryKey='', connectionTimer;
-const serverURL=new URL(location.href); serverURL.port=({'5174':'8082','5176':'8084'})[location.port]??'8080'; serverURL.protocol=location.protocol==='https:'?'wss:':'ws:'; serverURL.pathname='/'; serverURL.search='';
-$('server').value=serverURL.href;
 function links() {try { const u=new URL($('server').value);u.protocol=u.protocol==='wss:'?'https:':'http:';$('legacy').href=u.origin+'/';$('dm').href=u.origin+'/dm.html'; } catch {} }
-links(); $('server').addEventListener('change',links);
-if(['5174','5176'].includes(location.port)){$('legacy').hidden=true;$('dm').hidden=true;}
+$('server').addEventListener('change',links);
 function status(text) {$('status').textContent=text;}
 function send(message) {if(socket?.readyState===WebSocket.OPEN) socket.send(JSON.stringify(message));}
 function stopInput() {keys.clear();if(model.you)send(movement(keys,aim));}
@@ -112,7 +110,10 @@ async function frame(now) {
 try {
   const response = await fetch('/startup.json', {cache: 'no-store'});
   if (!response.ok) throw new Error('Start the Estella host with a dungeon mode.');
-  const {mode} = await response.json();
+  const {mode,connection} = await response.json();
+  const configured=gameConnection(location.href,connection);
+  $('server').value=configured.url;links();
+  $('legacy').hidden=!configured.showGameLinks;$('dm').hidden=!configured.showGameLinks;
   if (!['basic','3d'].includes(mode)) throw new Error('Invalid dungeon mode from Estella host.');
   scene = await createScene($('canvas'), mode);
   ready=true;$('joinButton').disabled=false;$('joinButton').textContent='Join dungeon';

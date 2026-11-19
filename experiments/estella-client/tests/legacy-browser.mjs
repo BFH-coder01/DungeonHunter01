@@ -1,3 +1,4 @@
+import {network} from '../../../config/network.mjs';
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
@@ -15,7 +16,7 @@ try {
   });
   p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='warning')warnings.push(m.text());});
   p.on('websocket',s=>{s.on('framesent',f=>sent.push(JSON.parse(f.payload)));s.on('framereceived',f=>{const m=JSON.parse(f.payload);if(m.type==='state')states.push(m);});});
-  const base=process.env.GAME_URL??'http://127.0.0.1:8080';
+  const base=process.env.GAME_URL??network.tests.http(network.tests.gamePort);
   await p.goto(base);await p.locator('#nameInput').fill('Legacy Check');await p.locator('#joinBtn').click();
   await p.waitForFunction(()=>window.audioEvidence.decoded>=1);
   await p.locator('#hud').waitFor({state:'visible'});

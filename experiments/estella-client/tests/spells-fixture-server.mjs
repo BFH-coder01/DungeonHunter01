@@ -1,3 +1,4 @@
+import {network} from '../../../config/network.mjs';
 // Local acceptance/playtest fixture. Uses real Game rules; controls only via parent IPC.
 import http from 'node:http';
 import {WebSocketServer} from 'ws';
@@ -49,5 +50,5 @@ let last=Date.now();const timer=setInterval(()=>{
   ws.send(JSON.stringify({type:'state',...state}));
  }
 },50);
-server.listen(Number(process.env.SPELL_TEST_PORT??8084),'127.0.0.1',()=>console.log('Spell fixture ready '+server.address().port));
+server.listen(network.fixtures.spellPort,network.fixtures.host,()=>console.log('Spell fixture ready '+server.address().port));
 process.on('SIGTERM',()=>{clearInterval(timer);wss.close();server.close();process.exit(0);});

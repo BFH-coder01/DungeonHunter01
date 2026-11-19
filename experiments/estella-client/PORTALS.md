@@ -47,6 +47,7 @@ In the second terminal, build and start the 3D client:
 
 ```powershell
 $env:ESTELLA_DIST='dist-portals'
+$env:ESTELLA_PROFILE='portals'
 $env:ESTELLA_PORT='5174'
 npm run build
 node scripts/serve.mjs --dungeon-mode=3d
@@ -131,3 +132,5 @@ ensure even short jumps and a red-then-link jump between snapshots reconcile.
 
 Existing masonry/ceiling work is retained. This preview builds into `dist-portals`,
 leaving the usual `dist` output untouched. The portal implementation is maintained on the feature/estella-poc branch.
+
+Addresses, ports, LAN access and explicit server URLs are configurable; see [network configuration](../../config/README.md).

@@ -1,3 +1,4 @@
+import {network} from '../../../config/network.mjs';
 import assert from 'node:assert/strict';
 import {once} from 'node:events';
 import {WebSocketServer} from 'ws';
@@ -6,7 +7,7 @@ import {makeWeapon} from '../../../src/shared/items.js';
 
 // Ordinary player protocol, isolated game state, repeatable camera and loot.
 export async function checkCache(page, mode) {
-  const server = new WebSocketServer({host:'127.0.0.1', port:0});
+  const server = new WebSocketServer({host:network.fixtures.host, port:0});
   await once(server, 'listening');
   let reveal, pickedSnapshot;
   server.on('connection', socket => {
@@ -48,7 +49,7 @@ export async function checkCache(page, mode) {
     socket.on('close', () => clearInterval(interval));
   });
   try {
-    await page.locator('#server').fill(`ws://127.0.0.1:${server.address().port}`);
+    await page.locator('#server').fill(network.tests.ws(server.address().port));
     for (const pickup of [false, true]) {
       await page.locator('#joinButton').click();
       await page.waitForFunction(() => window.estellaDiagnostics().snapshots > 4 && window.estellaDiagnostics().heldWeapon);

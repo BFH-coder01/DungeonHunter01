@@ -1,9 +1,10 @@
+import {network} from '../../../config/network.mjs';
 import {chromium} from 'playwright';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
-const fixture=spawn(process.execPath,['tests/fog-server.mjs'],{env:{...process.env,PORT:'8081'},stdio:['ignore','pipe','pipe']});
+const fixture=spawn(process.execPath,['tests/fog-server.mjs'],{env:{...process.env,PORT:String(network.tests.auxGamePort),HOST:network.tests.bindHost},stdio:['ignore','pipe','pipe']});
 await once(fixture.stdout,'data');
 const browser=await chromium.launch({channel:'msedge',headless:true});
 const errors=[],sent=[],received=[];
@@ -14,8 +15,8 @@ try {
     s.on('framesent',f=>sent.push(JSON.parse(f.payload)));
     s.on('framereceived',f=>received.push(JSON.parse(f.payload)));
   });
-  await p.goto('http://127.0.0.1:5173');await p.waitForFunction(()=>!document.getElementById('joinButton').disabled);
-  await p.locator('#server').fill('ws://127.0.0.1:8081');await p.locator('#joinButton').click();
+  await p.goto(network.tests.http(network.tests.clientPort));await p.waitForFunction(()=>!document.getElementById('joinButton').disabled);
+  await p.locator('#server').fill(network.tests.ws(network.tests.auxGamePort));await p.locator('#joinButton').click();
   await p.waitForFunction(()=>window.estellaDiagnostics().snapshots>20);
   const first=await p.evaluate(()=>window.estellaDiagnostics());
   assert.ok(first.knownTiles>0 && first.knownTiles<2816);assert.equal(first.knownTiles,first.tiles);
@@ -31,11 +32,11 @@ try {
   assert.equal(await p.evaluate(()=>window.estellaDiagnostics().tiles),0);
   // An adversarial server packet must reset the UI, never become a DM session.
   const malformed=await browser.newPage();malformed.on('pageerror',e=>errors.push(e.message));
-  await malformed.routeWebSocket('ws://127.0.0.1:8082/',ws=>ws.onMessage(raw=>{
+  await malformed.routeWebSocket(network.tests.ws(network.tests.malformedPort)+'/',ws=>ws.onMessage(raw=>{
     const m=JSON.parse(raw);if(m.type==='join')ws.send(JSON.stringify({type:'welcome',dm:true,width:64,height:44,tiles:[]}));
   }));
-  await malformed.goto('http://127.0.0.1:5173');await malformed.waitForFunction(()=>!document.getElementById('joinButton').disabled);
-  await malformed.locator('#server').fill('ws://127.0.0.1:8082/');await malformed.locator('#joinButton').click();
+  await malformed.goto(network.tests.http(network.tests.clientPort));await malformed.waitForFunction(()=>!document.getElementById('joinButton').disabled);
+  await malformed.locator('#server').fill(network.tests.ws(network.tests.malformedPort)+'/');await malformed.locator('#joinButton').click();
   await malformed.waitForFunction(()=>document.getElementById('status').textContent.includes('Protocol error'));
   assert.equal(await malformed.evaluate(()=>window.estellaDiagnostics().connected),false);
   assert.deepEqual(errors,[]);

@@ -1,3 +1,4 @@
+import {network} from '../../../config/network.mjs';
 import {chromium} from 'playwright';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
@@ -13,8 +14,8 @@ try{
   const p=await browser.newPage({viewport:{width:1280,height:720}});
   p.on('pageerror',e=>errors.push(e.message));
   p.on('websocket',s=>{s.on('framesent',f=>sent.push(JSON.parse(f.payload)));s.on('framereceived',f=>{const m=JSON.parse(f.payload);if(m.type==='state')states.push(m);});});
-  await p.goto('http://127.0.0.1:5173');await p.waitForFunction(()=>!document.getElementById('joinButton').disabled);
-  await p.locator('#server').fill(`ws://127.0.0.1:${port}`);await p.locator('#joinButton').click();
+  await p.goto(network.tests.http(network.tests.clientPort));await p.waitForFunction(()=>!document.getElementById('joinButton').disabled);
+  await p.locator('#server').fill(network.tests.ws(port));await p.locator('#joinButton').click();
   await p.waitForFunction(()=>window.estellaDiagnostics().snapshots>25);
   assert.equal(await p.evaluate(()=>window.estellaDiagnostics().avatars),1);
   assert.equal(await p.evaluate(()=>window.estellaDiagnostics().heldWeapon),'Rusted Dagger');

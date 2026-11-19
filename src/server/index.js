@@ -1,5 +1,4 @@
-// HTTP static host + WebSocket game server. Bind on 0.0.0.0 so anyone on the
-// home wifi can join from a browser.
+// HTTP static host + WebSocket game server. Listener settings live in config/network.mjs.
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -10,11 +9,12 @@ import { WebSocketServer } from 'ws';
 
 import { MSG, TICK_MS } from '../shared/constants.js';
 import { Game } from './game.js';
+import {network,endpoint} from '../../config/network.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', '..', 'public');
 const SHARED_DIR = path.join(__dirname, '..', 'shared');
-const PORT = Number(process.env.PORT) || 8080;
+const PORT = network.game.port;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -158,10 +158,10 @@ function lanAddresses() {
     .map((n) => n.address);
 }
 
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, network.game.host, () => {
   console.log(`DungeonHunter01 — seed ${game.seed}, ${game.totalLevels} level(s)`);
-  console.log('Open on this machine:  http://localhost:' + PORT);
-  for (const addr of lanAddresses()) {
-    console.log(`Open on the home wifi: http://${addr}:${PORT}`);
+  console.log('Open on this machine:  ' + endpoint('http',network.game.displayHost,server.address().port));
+  for (const addr of network.game.advertiseLAN ? lanAddresses() : []) {
+    console.log('Open on the home wifi: ' + endpoint('http',addr,server.address().port));
   }
 });

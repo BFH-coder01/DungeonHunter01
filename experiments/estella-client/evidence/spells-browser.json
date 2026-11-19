@@ -7,8 +7,8 @@
       "remainingEffects": 0,
       "remainingParticles": 0,
       "wasmBytes": 17301504,
-      "medianFrameMs": 16.69999999999709,
-      "p95FrameMs": 16.80000000000291,
+      "medianFrameMs": 16.700000000000728,
+      "p95FrameMs": 16.799999999999272,
       "checks": [
         "four distinct accepted spells",
         "remote observer receives each cast",
@@ -32,7 +32,7 @@
       "remainingParticles": 0,
       "wasmBytes": 17301504,
       "medianFrameMs": 16.69999999999891,
-      "p95FrameMs": 16.80000000000109,
+      "p95FrameMs": 16.799999999999272,
       "checks": [
         "four distinct accepted spells",
         "remote observer receives each cast",

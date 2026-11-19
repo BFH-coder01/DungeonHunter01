@@ -1,3 +1,4 @@
+import {network} from '../../../config/network.mjs';
 import WebSocket from 'ws';
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
@@ -5,7 +6,7 @@ import {Model} from '../src/model.js';
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(predicate,timeout=10000){const end=Date.now()+timeout;while(!predicate()){if(Date.now()>end)throw new Error('Timed out waiting for server');await delay(20);}}
 async function join(name){
-  const model=new Model(),events=[],socket=new WebSocket('ws://127.0.0.1:8080');
+  const model=new Model(),events=[],socket=new WebSocket(network.tests.ws(network.tests.gamePort));
   socket.on('open',()=>socket.send(JSON.stringify({type:'join',name})));
   socket.on('message',raw=>{const msg=JSON.parse(raw);model.accept(msg);events.push(...msg.events??[]);});
   await until(()=>model.current);
@@ -66,7 +67,7 @@ try{
   a.send({type:'input',mx:0,my:0,aim:Math.atan2(pb.y-pa.y,pb.x-pa.x)});await delay(100);
   a.send({type:'action',action:'attack'});
   await until(()=>b.model.current.self.health<hp);
-  const report={date:new Date().toISOString(),pickup:{cacheId:cache.c.id,changedFields},targetHealthBefore:hp,targetHealthAfter:b.model.current.self.health,eventPackets:a.events.length,transport:'existing src/server/index.js on port 8080',clientPositionWrites:false};
+  const report={date:new Date().toISOString(),pickup:{cacheId:cache.c.id,changedFields},targetHealthBefore:hp,targetHealthAfter:b.model.current.self.health,eventPackets:a.events.length,transport:`existing src/server/index.js on port ${network.tests.gamePort}`,clientPositionWrites:false};
   await writeFile('evidence/live-actions.json',JSON.stringify(report,null,2)+'\n');
   console.log('PASS: attack damage confirmed by live server');
 }finally{for(const a of actors){a.send({type:'input',mx:0,my:0,aim:0});a.socket.close();}}

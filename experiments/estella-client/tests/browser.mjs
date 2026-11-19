@@ -1,3 +1,4 @@
+import {network} from '../../../config/network.mjs';
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
@@ -10,14 +11,14 @@ for(const page of [poc,legacy,dm])page.on('pageerror',error=>errors.push(error.m
 poc.on('websocket',socket=>socket.on('framesent',f=>messages.push(JSON.parse(f.payload))));
 const start=Date.now();
 try {
-  await poc.goto('http://127.0.0.1:5173');
+  await poc.goto(network.tests.http(network.tests.clientPort));
   await poc.waitForFunction(()=>!document.getElementById('joinButton').disabled);
   const loadMs=Date.now()-start;
   await poc.locator('#joinButton').click();
   await poc.waitForFunction(()=>window.estellaDiagnostics().snapshots>10);
-  await legacy.goto('http://127.0.0.1:8080');
+  await legacy.goto(network.tests.http(network.tests.gamePort));
   await legacy.locator('#nameInput').fill('Legacy Test');await legacy.locator('#joinBtn').click();
-  await dm.goto('http://127.0.0.1:8080/dm.html');
+  await dm.goto(network.tests.http(network.tests.gamePort)+'/dm.html');
   await dm.waitForFunction(()=>document.getElementById('dmRoster').textContent.includes('Legacy Test')&&document.getElementById('dmRoster').textContent.includes('Estella Hunter'));
   await poc.bringToFront();
   const initial=await poc.evaluate(()=>window.estellaDiagnostics());

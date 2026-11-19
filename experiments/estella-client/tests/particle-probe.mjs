@@ -1,3 +1,4 @@
+import {network} from '../../../config/network.mjs';
 import {chromium} from 'playwright';
 import {writeFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
@@ -5,7 +6,7 @@ const browser=await chromium.launch({channel:'msedge',headless:true});
 try {
  const page=await browser.newPage({viewport:{width:640,height:480}});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(process.env.PROBE_URL??'http://127.0.0.1:5176/startup.json');
+ await page.goto(network.previewURL);
  await page.evaluate(async()=>{
   document.body.innerHTML='<canvas id="canvas" width="640" height="480"></canvas>';
   const {default:factory}=await import('/vendor/estella/esengine.js');

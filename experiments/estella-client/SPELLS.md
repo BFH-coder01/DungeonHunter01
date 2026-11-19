@@ -38,6 +38,7 @@ Second terminal — Estella client:
 
 ```powershell
 $env:ESTELLA_DIST='dist-spells'
+$env:ESTELLA_PROFILE='spells'
 $env:ESTELLA_PORT='5176'
 npm start -- --dungeon-mode=3d
 ```
@@ -112,3 +113,5 @@ With the preview running, `node tests/particle-probe.mjs` also captures a native
 particle emitter with and without a solid occluding wall. Inspect both captures
 when changing the engine bundle; the probe's numerical assertions alone do not
 establish visual occlusion.
+
+Addresses, ports, LAN access and explicit server URLs are configurable; see [network configuration](../../config/README.md).

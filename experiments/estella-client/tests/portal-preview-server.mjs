@@ -1,3 +1,4 @@
+import {network} from '../../../config/network.mjs';
 // Isolated test server: real Game authority, optional test fog, deterministic starting
 // position near a portal. No browser-accessible fixture controls exist.
 import http from 'node:http';
@@ -6,7 +7,7 @@ import {Game} from '../../../src/server/game.js';
 import {CONFIG} from '../../../src/shared/config.js';
 CONFIG.revealAll=process.env.PORTAL_TEST_FOG !== '1';
 const game=new Game(12345),level=game.levels[0];
-const port=Number(process.env.PORTAL_TEST_PORT??8082);
+const port=network.fixtures.portalPort;
 const server=http.createServer((req,res)=>res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({preview:'Portals',seed:game.seed,players:game.players.size,arenaCapacity:level.battleSpawns.length})));
 const wss=new WebSocketServer({server});let seq=0;
 function stage(p,portal=level.linkPortals[0]){
@@ -39,4 +40,4 @@ let last=Date.now();setInterval(()=>{
   const now=Date.now();game.tick(Math.min(.25,(now-last)/1000),now);last=now;
   for(const ws of wss.clients)if(ws.readyState===1){if(ws.player)ws.send(JSON.stringify({type:'state',...game.snapshotFor(ws.player)}));else if(ws.spectator)ws.send(JSON.stringify({type:'state',dm:true,...game.dmSnapshot()}));}
 },50);
-server.listen(port,'0.0.0.0',()=>console.log(`Portal fixture ready on ${port}; arena capacity ${level.battleSpawns.length}`));
+server.listen(port,network.fixtures.host,()=>console.log(`Portal fixture ready on ${port}; arena capacity ${level.battleSpawns.length}`));

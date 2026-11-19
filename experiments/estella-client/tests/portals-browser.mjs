@@ -1,9 +1,10 @@
+import {network} from '../../../config/network.mjs';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {writeFile} from 'node:fs/promises';
 import {chromium} from 'playwright';
-const origin='http://127.0.0.1:5175',errors=[],reports=[];
+const origin=network.tests.http(network.tests.portalClientPort),errors=[],reports=[];
 let host,fixture,browser;
 async function start(script,args,env,ready){
   const p=spawn(process.execPath,[script,...args],{env:{...process.env,...env},stdio:['ignore','pipe','pipe','ipc'],windowsHide:true});
@@ -11,15 +12,15 @@ async function start(script,args,env,ready){
 }
 async function stop(p){if(p&&p.exitCode===null){const done=once(p,'exit');p.kill();await done;}}
 const inspect=page=>page.evaluate(()=>window.estellaDiagnostics());
-async function join(page,name){await page.goto(origin);await page.waitForFunction(()=>!document.getElementById('joinButton').disabled);await page.locator('#server').fill('ws://127.0.0.1:8083');await page.locator('#name').fill(name);await page.locator('#joinButton').click();await page.waitForFunction(()=>window.estellaDiagnostics().snapshots>10&&window.estellaDiagnostics().portalCount===7);}
+async function join(page,name){await page.goto(origin);await page.waitForFunction(()=>!document.getElementById('joinButton').disabled);assert.equal(await page.locator('#server').inputValue(),network.tests.ws(network.tests.portalGamePort)+'/');await page.locator('#name').fill(name);await page.locator('#joinButton').click();await page.waitForFunction(()=>window.estellaDiagnostics().snapshots>10&&window.estellaDiagnostics().portalCount===7);}
 async function walkThrough(page){const seq=(await inspect(page)).self.teleportSequence;await page.keyboard.down('KeyW');await page.waitForFunction(n=>window.estellaDiagnostics().self.teleportSequence>n,seq,{timeout:4000});await page.keyboard.up('KeyW');}
 async function faceServerAim(page,desired){const d=await inspect(page),delta=Math.atan2(Math.sin(desired-d.aim),Math.cos(desired-d.aim));if(Math.abs(delta)>.03){const key=delta>0?'ArrowRight':'ArrowLeft';await page.keyboard.down(key);await page.waitForTimeout(Math.abs(delta)/1.8*1000);await page.keyboard.up(key);}}
 try{
-  for(const url of [origin,'http://127.0.0.1:8083']){let free=false;try{await fetch(url);}catch(e){if(e.cause?.code==='ECONNREFUSED')free=true;else throw e;}assert.ok(free,`Refuse to replace occupied ${url}`);}
-  fixture=await start('tests/portal-preview-server.mjs',[],{PORTAL_TEST_PORT:'8083',PORTAL_TEST_FOG:'1'},'ready on');
+  for(const url of [origin,network.tests.http(network.tests.portalGamePort)]){let free=false;try{await fetch(url);}catch(e){if(e.cause?.code==='ECONNREFUSED')free=true;else throw e;}assert.ok(free,`Refuse to replace occupied ${url}`);}
+  fixture=await start('tests/portal-preview-server.mjs',[],{PORTAL_TEST_PORT:String(network.tests.portalGamePort),PORTAL_TEST_FOG:'1'},'ready on');
   browser=await chromium.launch({channel:process.env.BROWSER_CHANNEL??'msedge',headless:true});
   for(const mode of ['3d','basic']){
-    host=await start('scripts/serve.mjs',[`--dungeon-mode=${mode}`],{ESTELLA_DIST:'dist-portals',ESTELLA_PORT:'5175'},'localhost:5175');
+    host=await start('scripts/serve.mjs',[`--dungeon-mode=${mode}`],{ESTELLA_DIST:'dist-portals',ESTELLA_PORT:String(network.tests.portalClientPort),ESTELLA_HOST:network.tests.bindHost,ESTELLA_PROFILE:'portals',ESTELLA_GAME_PORT:String(network.tests.portalGamePort)},'Estella ');
     const a=await browser.newPage({viewport:{width:1280,height:720}}),b=await browser.newPage({viewport:{width:1280,height:720}});
     for(const p of [a,b])p.on('pageerror',e=>errors.push(e.message));
     await join(a,'First');await join(b,'Second');
@@ -49,7 +50,7 @@ try{
     const reset=await inspect(a);assert.equal(reset.self.teleportSequence,0);assert.equal(reset.portalMeshes,224);
     reports.push({mode,landmarks:7,portalMeshes:224,knownTiles:initial.knownTiles,colors:['green','blue','yellow'],entrantOnly:true,arrivalLock:true,aimPreserved:true,twoPlayerGathering:true,inwardAim:true,cooldown:true,reconnect:true});
     await a.close();await b.close();await stop(host);host=null;await stop(fixture);fixture=null;
-    if(mode==='3d')fixture=await start('tests/portal-preview-server.mjs',[],{PORTAL_TEST_PORT:'8083',PORTAL_TEST_FOG:'1'},'ready on');
+    if(mode==='3d')fixture=await start('tests/portal-preview-server.mjs',[],{PORTAL_TEST_PORT:String(network.tests.portalGamePort),PORTAL_TEST_FOG:'1'},'ready on');
   }
   assert.deepEqual(errors,[]);await writeFile('evidence/portal-browser.json',JSON.stringify({date:new Date().toISOString(),browser:browser.version(),errors,reports},null,2));console.log('PASS portals: both modes, multiplayer, travel, gathering, fog and reconnect');
 }finally{await browser?.close();await stop(host);await stop(fixture);}

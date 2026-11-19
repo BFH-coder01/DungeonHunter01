@@ -1,3 +1,4 @@
+import {network} from '../../../config/network.mjs';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
@@ -6,11 +7,11 @@ import {checkCache} from './cache-fixture.mjs';
 import {chromium} from 'playwright';
 
 // Own only the Estella host created here. Never stop or restart the game server.
-const origin = 'http://127.0.0.1:5173';
-await fetch('http://127.0.0.1:8080');
+const origin = network.tests.http(network.tests.clientPort);
+await fetch(network.tests.http(network.tests.gamePort));
 try {
   await fetch(origin);
-  throw new Error('Port 5173 is occupied. Stop the Estella host before this test.');
+  throw new Error(`Port ${network.tests.clientPort} is occupied. Stop the Estella host before this test.`);
 } catch (error) {
   if (error.cause?.code !== 'ECONNREFUSED') throw error;
 }
@@ -18,12 +19,12 @@ await mkdir('evidence', {recursive:true});
 let host, browser;
 const reports = [], errors = [];
 async function startHost(mode) {
-  host = spawn(process.execPath, ['scripts/serve.mjs', `--dungeon-mode=${mode}`], {stdio:['ignore','pipe','pipe']});
+  host = spawn(process.execPath, ['scripts/serve.mjs', `--dungeon-mode=${mode}`], {env:{...process.env,ESTELLA_PORT:String(network.tests.clientPort),ESTELLA_HOST:network.tests.bindHost,ESTELLA_PROFILE:'game',ESTELLA_GAME_PORT:String(network.tests.gamePort)},stdio:['ignore','pipe','pipe']});
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Host startup timed out')), 10000);
     host.once('error', error => {clearTimeout(timer);reject(error);});
     host.once('exit', code => {clearTimeout(timer);reject(new Error(`Host exited: ${code}`));});
-    host.stdout.on('data', data => {if (String(data).includes('http://localhost:5173')) {clearTimeout(timer);resolve();}});
+    host.stdout.on('data', data => {if (String(data).includes('Estella ')) {clearTimeout(timer);resolve();}});
   });
 }
 async function stopHost() {
@@ -46,9 +47,9 @@ try {
     await page.goto(`${origin}/?mode=${mode==='3d'?'basic':'3d'}`);
     await page.waitForFunction(() => !document.getElementById('joinButton').disabled);
     assert.equal(await page.evaluate(() => window.estellaDiagnostics().mode), mode);
-    assert.deepEqual(await (await fetch(`${origin}/startup.json?mode=other`)).json(), {mode});
+    assert.equal((await (await fetch(`${origin}/startup.json?mode=other`)).json()).mode, mode);
     await checkCache(page, mode);
-    await page.locator('#server').fill('ws://127.0.0.1:8080');
+    await page.locator('#server').fill(network.tests.ws(network.tests.gamePort));
     await page.locator('#joinButton').click();
     await page.waitForFunction(() => window.estellaDiagnostics().connected && window.estellaDiagnostics().tiles > 0 && window.estellaDiagnostics().snapshots > 10);
     const initial = await page.evaluate(() => window.estellaDiagnostics());

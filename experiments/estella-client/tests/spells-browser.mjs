@@ -1,9 +1,10 @@
+import {network} from '../../../config/network.mjs';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {writeFile} from 'node:fs/promises';
 import {chromium} from 'playwright';
-const origin='http://127.0.0.1:5178',reports=[],errors=[];
+const origin=network.tests.http(network.tests.spellClientPort),reports=[],errors=[];
 let fixture,host,browser;
 async function start(script,args,env){
  const child=spawn(process.execPath,[script,...args],{env:{...process.env,...env},stdio:['ignore','pipe','pipe','ipc'],windowsHide:true});
@@ -12,13 +13,13 @@ async function start(script,args,env){
 async function stop(p){if(p&&p.exitCode===null){const done=once(p,'exit');p.kill();await done;}}
 async function stage(data){const done=once(fixture,'message');fixture.send(data);await done;}
 const inspect=p=>p.evaluate(()=>window.estellaDiagnostics());
-async function join(p,name){await p.goto(origin);await p.waitForFunction(()=>!document.getElementById('joinButton').disabled);await p.locator('#server').fill('ws://127.0.0.1:8085');await p.locator('#name').fill(name);await p.locator('#joinButton').click();await p.waitForFunction(()=>window.estellaDiagnostics().connected&&window.estellaDiagnostics().snapshots>5);}
+async function join(p,name){await p.goto(origin);await p.waitForFunction(()=>!document.getElementById('joinButton').disabled);assert.equal(await p.locator('#server').inputValue(),network.tests.ws(network.tests.spellGamePort)+'/');await p.locator('#name').fill(name);await p.locator('#joinButton').click();await p.waitForFunction(()=>window.estellaDiagnostics().connected&&window.estellaDiagnostics().snapshots>5);}
 try{
- for(const u of [origin,'http://127.0.0.1:8085']){let free=false;try{await fetch(u);}catch(e){if(e.cause?.code==='ECONNREFUSED')free=true;else throw e;}assert.ok(free,'Port occupied '+u);}
+ for(const u of [origin,network.tests.http(network.tests.spellGamePort)]){let free=false;try{await fetch(u);}catch(e){if(e.cause?.code==='ECONNREFUSED')free=true;else throw e;}assert.ok(free,'Port occupied '+u);}
  browser=await chromium.launch({channel:'msedge',headless:true});
  for(const mode of ['3d','basic']){
-  fixture=await start('tests/spells-fixture-server.mjs',[],{SPELL_TEST_PORT:'8085'});
-  host=await start('scripts/serve.mjs',[`--dungeon-mode=${mode}`],{ESTELLA_PORT:'5178',ESTELLA_DIST:'dist-spells'});
+  fixture=await start('tests/spells-fixture-server.mjs',[],{SPELL_TEST_PORT:String(network.tests.spellGamePort)});
+  host=await start('scripts/serve.mjs',[`--dungeon-mode=${mode}`],{ESTELLA_PORT:String(network.tests.spellClientPort),ESTELLA_HOST:network.tests.bindHost,ESTELLA_PROFILE:'spells',ESTELLA_GAME_PORT:String(network.tests.spellGamePort),ESTELLA_DIST:'dist-spells'});
   const a=await browser.newPage({viewport:{width:1280,height:720}}),b=await browser.newPage({viewport:{width:1280,height:720}});
   for(const p of [a,b])p.on('pageerror',e=>errors.push(e.message));
   await join(a,'Caster');await join(b,'Observer');

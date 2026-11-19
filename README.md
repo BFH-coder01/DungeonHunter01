@@ -186,3 +186,5 @@ uses, so direction matches what's on screen.
 - Balance pass on cache boon ranges, weapon/spell stats.
 - Mobile/touch controls for participants.
 - DM view: pan/zoom and multi-level switching once dungeons exceed 1 level.
+
+The Estella spellcasting test room has [installation, start/stop and test instructions](experiments/estella-client/SPELLS.md).

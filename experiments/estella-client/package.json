@@ -8,8 +8,13 @@
     "start": "node scripts/serve.mjs",
     "test": "node --test tests/*.test.mjs",
     "test:browser": "node tests/browser.mjs",
-    "test:dungeon-modes": "node tests/dungeon-modes-browser.mjs"
+    "test:dungeon-modes": "node tests/dungeon-modes-browser.mjs",
+    "test:spells": "node tests/spells-browser.mjs"
   },
-  "devDependencies": { "playwright": "1.56.1" },
-  "engines": { "node": ">=20" }
+  "devDependencies": {
+    "playwright": "1.56.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
 }

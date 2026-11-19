@@ -7,6 +7,7 @@ import { makeRng, randomSeed } from '../shared/rng.js';
 import { makeWeapon, makeSpell } from '../shared/items.js';
 import { AMBIENT_MAX_DIST } from '../shared/sounds.js';
 import { generateDungeon, tileAt } from './dungeon.js';
+import {recordCast, visibleCast} from './spell-casts.js';
 import {placePortals, portalAt, checkPortals, teleportState} from './portals.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -253,11 +254,13 @@ export class Game {
     player.castReadyAt = now + spell.cooldownMs;
 
     if (spell.heal) {
+      recordCast(this, player, spell, now, null);
       player.health = Math.min(player.maxHealth, player.health + spell.heal);
       this.emit(player, 'cast', { name: spell.name, hit: true });
       return;
     }
     const target = this.frontTarget(player, spell.range, 0.85);
+    recordCast(this, player, spell, now, target);
     if (target) this.damage(target, spell.damage, player, spell.name);
     this.emit(player, 'cast', { name: spell.name, hit: !!target });
   }
@@ -432,6 +435,7 @@ export class Game {
       if (!this.canSee(player, other.x, other.y)) continue;
       others.push({
         ...teleportState(other),
+        castRecord: visibleCast(this, player, other, now),
         id: other.id,
         name: other.name,
         x: round2(other.x),
@@ -465,6 +469,7 @@ export class Game {
       t: now,
       self: {
         ...teleportState(player),
+        castRecord: visibleCast(this, player, player, now),
         castVisualSuppressed: player.castReadyAt <= (player.castVisualAfter ?? 0),
         x: round2(player.x),
         y: round2(player.y),

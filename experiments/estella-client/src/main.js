@@ -5,11 +5,11 @@ import {reconcileTravel,drawPortalLocator} from './portals.js';
 const $=id=>document.getElementById(id);
 const model=new Model(), combat=new Combat(),keys=new Set(), frames=[];
 let scene, socket, aim=0, last=performance.now(), lastInput=0, lastMetrics=0, connectedAt=0, snapshots=0, ready=false, inventoryKey='', connectionTimer;
-const serverURL=new URL(location.href); serverURL.port=location.port==='5174'?'8082':'8080'; serverURL.protocol=location.protocol==='https:'?'wss:':'ws:'; serverURL.pathname='/'; serverURL.search='';
+const serverURL=new URL(location.href); serverURL.port=({'5174':'8082','5176':'8084'})[location.port]??'8080'; serverURL.protocol=location.protocol==='https:'?'wss:':'ws:'; serverURL.pathname='/'; serverURL.search='';
 $('server').value=serverURL.href;
 function links() {try { const u=new URL($('server').value);u.protocol=u.protocol==='wss:'?'https:':'http:';$('legacy').href=u.origin+'/';$('dm').href=u.origin+'/dm.html'; } catch {} }
 links(); $('server').addEventListener('change',links);
-if(location.port==='5174'){$('legacy').hidden=true;$('dm').hidden=true;}
+if(['5174','5176'].includes(location.port)){$('legacy').hidden=true;$('dm').hidden=true;}
 function status(text) {$('status').textContent=text;}
 function send(message) {if(socket?.readyState===WebSocket.OPEN) socket.send(JSON.stringify(message));}
 function stopInput() {keys.clear();if(model.you)send(movement(keys,aim));}
@@ -37,11 +37,11 @@ $('connect').onsubmit=event=>{
         if(!snapshots)aim=model.current.self.aim;
         const travel=reconcileTravel(model.previous?.self,model.current.self,aim);aim=travel.aim;
         if(travel.travelled){keys.clear();send(movement(keys,aim));}
-        snapshots++;combat.accept(model.current.self,performance.now());scene.updateMap(model);updateHUD();$('combat').hidden=false;
+        snapshots++;combat.accept(model.current.self,performance.now(),model.current.t);scene.updateMap(model);updateHUD();$('combat').hidden=false;
       }
     }catch(error){disconnect();status(`Protocol error: ${error.message}. Rejoin to reset.`);}
   };
-  current.onerror=()=>{if(socket===current)status('Connection failed. Start the game server on port 8080.');};
+  current.onerror=()=>{if(socket===current)status('Connection failed. Check that the selected game server is running.');};
   current.onclose=()=>{if(socket===current){disconnect();status('Connection closed. Rejoin when the server is available.');}};
 };
 function action(action,extra={}) {
@@ -102,6 +102,7 @@ async function frame(now) {
     $('combatState').textContent=feedback.notice||(!feedback.alive?'Waiting to respawn':feedback.swapRemaining>0?'Changing weapon…':feedback.attackRemaining>0?'Recovering…':'Ready');
     $('hurt').style.opacity=feedback.hurt.toFixed(2);
     if(now-model.received>3000 && model.current) {stopInput(); status('Waiting for server snapshots…');}
+    else if($('status').textContent==='Waiting for server snapshots…')status('Connected · click scene for mouse look');
   }
   await scene.app.tick(dt);
   frames.push(frameMs);if(frames.length>1800)frames.shift();

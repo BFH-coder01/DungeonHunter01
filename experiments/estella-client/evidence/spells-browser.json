@@ -1,0 +1,53 @@
+{
+  "reports": [
+    {
+      "mode": "3d",
+      "knownTiles": 2816,
+      "backend": "native-particles-and-world-mesh",
+      "remainingEffects": 0,
+      "remainingParticles": 0,
+      "wasmBytes": 17301504,
+      "medianFrameMs": 16.69999999999709,
+      "p95FrameMs": 16.80000000000291,
+      "checks": [
+        "four distinct accepted spells",
+        "remote observer receives each cast",
+        "mana and healing",
+        "native particles alive and bounded",
+        "duplicate snapshots",
+        "repeated casting",
+        "wall impact",
+        "older server fallback",
+        "no mana rejection",
+        "teleport cleanup",
+        "death cleanup",
+        "disconnect and rejoin"
+      ]
+    },
+    {
+      "mode": "basic",
+      "knownTiles": 2816,
+      "backend": "native-particles-and-world-mesh",
+      "remainingEffects": 0,
+      "remainingParticles": 0,
+      "wasmBytes": 17301504,
+      "medianFrameMs": 16.69999999999891,
+      "p95FrameMs": 16.80000000000109,
+      "checks": [
+        "four distinct accepted spells",
+        "remote observer receives each cast",
+        "mana and healing",
+        "native particles alive and bounded",
+        "duplicate snapshots",
+        "repeated casting",
+        "wall impact",
+        "older server fallback",
+        "no mana rejection",
+        "teleport cleanup",
+        "death cleanup",
+        "disconnect and rejoin"
+      ]
+    }
+  ],
+  "errors": []
+}

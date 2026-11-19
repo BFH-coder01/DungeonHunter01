@@ -3,6 +3,8 @@
 A separate first-person client for the existing DungeonHunter WebSocket server.
 The original game at port 8080 and its Dungeon Master view are unchanged.
 
+For all four spell effects and the training room, see [spell preview instructions](SPELLS.md).
+
 For the portal-enabled preview, see [installation and start/stop instructions](PORTALS.md).
 
 ## Try it on Windows

@@ -11,8 +11,8 @@ export function attackPose(progress, name='') {
 }
 export class Combat {
   constructor(){this.reset();}
-  reset(){this.self=null;this.received=0;this.attackStart=-Infinity;this.attackEnd=0;this.castStart=-Infinity;this.castEnd=0;this.hurtUntil=0;this.notice='';this.noticeUntil=0;this.weaponUid=null;}
-  accept(self,now){
+  reset(){this.self=null;this.received=0;this.attackStart=-Infinity;this.attackEnd=0;this.castStart=-Infinity;this.castEnd=0;this.hurtUntil=0;this.notice='';this.noticeUntil=0;this.weaponUid=null;this.castName=null;this.castSequence=0;}
+  accept(self,now,serverTime){
     const old=this.self;
     if(old?.alive && self.alive && self.maxHealth===old.maxHealth && self.health<old.health)this.hurtUntil=now+350;
     if(old && self.kills>old.kills)this.message('Kill confirmed',now);
@@ -26,7 +26,12 @@ export class Combat {
     }
     if(Number.isFinite(self.castRemaining)){
       this.castEnd=now+self.castRemaining;
-      if(self.castRemaining>0)this.castStart=this.castEnd-(equippedSpell(self)?.cooldownMs??450);
+      // Recovery does not identify a cast: changing spells must not replay or recolor it.
+      if(self.castRecord && self.castRecord.sequence>this.castSequence){
+        this.castSequence=self.castRecord.sequence;
+        if(now-this.castStart>350)this.castStart=now-Math.max(0,(Number.isFinite(serverTime)?serverTime-self.castRecord.timestamp:Infinity));
+        this.castName=self.castRecord.name;
+      }
     }
     if(self.castVisualSuppressed)this.castStart=-Infinity;
     if(old && (old.teleportSequence??0)!==(self.teleportSequence??0)){this.attackStart=-Infinity;this.castStart=-Infinity;this.hurtUntil=0;}
@@ -46,13 +51,13 @@ export class Combat {
       const spell=equippedSpell(s);if(!spell)return false;
       if(s.mana<spell.manaCost){this.message('Not enough mana',now);return false;}
       if(now<this.castEnd)return false;
-      this.castStart=now;this.castEnd=now+spell.cooldownMs;return true;
+      this.castName=spell.name;this.castStart=now;this.castEnd=now+spell.cooldownMs;return true;
     }
     return true;
   }
   frame(now){
     const weapon=equippedWeapon(this.self),spell=equippedSpell(this.self);
-    return {weapon,spell,alive:!!this.self?.alive,
+    return {weapon,spell,castName:this.castName,alive:!!this.self?.alive,
       attack:now<this.attackEnd?clamp((now-this.attackStart)/(weapon?.swingMs??320)):null,
       attackRemaining:Math.max(0,this.attackEnd-now),castRemaining:Math.max(0,this.castEnd-now),
       castFlash:this.self?.alive?clamp(1-(now-this.castStart)/350):0,
